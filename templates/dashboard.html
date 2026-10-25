@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ER Dashboard — {{ hospital }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_v }}">
+<link rel="manifest" href="{{ url_for('manifest') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icon/apple-touch-icon.png') }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icon/favicon-32.png') }}">
+<link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icon/icon-192.png') }}">
+<meta name="theme-color" content="#b91c1c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ER Dashboard">
+<meta name="mobile-web-app-capable" content="yes">
+</head>
+
+{#- โดนัท SVG: items = [{label,value,pct,color}] -#}
+{% macro donut(items, total, unit='ราย', size=104, vsize=9) %}
+{% set r = 15.915 %}
+<svg viewBox="0 0 42 42" width="{{ size }}" height="{{ size }}" style="flex:none">
+  <circle cx="21" cy="21" r="{{ r }}" fill="none" stroke="{{ '#ffe9e9' if unit else 'rgba(255,255,255,.28)' }}" stroke-width="7.4"></circle>
+  {% set ns = namespace(off=25) %}
+  {% for it in items %}{% if it.pct > 0 %}
+  <circle cx="21" cy="21" r="{{ r }}" fill="none" stroke="{{ it.color }}" stroke-width="7.4"
+          stroke-dasharray="{{ it.pct }} {{ 100 - it.pct }}"
+          stroke-dashoffset="{{ ns.off }}" transform="rotate(-90 21 21)"></circle>
+  {% set ns.off = ns.off - it.pct %}
+  {% endif %}{% endfor %}
+  <text x="21" y="{{ 21.4 if unit else 23 }}" text-anchor="middle" font-size="{{ vsize }}"
+        font-family="Kanit" font-weight="700" fill="{{ '#7f1d1d' if unit else '#ffffff' }}">{{ total }}</text>
+  {% if unit %}<text x="21" y="26.6" text-anchor="middle" font-size="4"
+        font-family="Sarabun" fill="#a57c7c">{{ unit }}</text>{% endif %}
+</svg>
+{% endmacro %}
+
+{% macro legend(items) %}
+<div class="legend">
+  {% for it in items %}
+  <div class="li"><span class="dot" style="background:{{ it.color }}"></span>
+    <span class="nm" title="{{ it.label }}">{{ it.label }}</span>
+    <span class="vl">{{ it.value }}</span>
+    <span class="pc">({{ it.pct }}%)</span></div>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro delta(v) %}
+  {% if v is not none %}
+    <div class="d">{{ '▲' if v >= 0 else '▼' }} {{ v|abs }}%
+      <span class="vs">vs. ช่วงก่อนหน้า</span></div>
+  {% else %}<div class="d"><span class="vs">ไม่มีข้อมูลเทียบ</span></div>{% endif %}
+{% endmacro %}
+
+<body class="{{ 'print-mode' if print_mode }}">
+
+<form class="toolbar" method="get">
+  <label>ตั้งแต่ <input type="date" name="d1" value="{{ d.d1 }}"></label>
+  <label>ถึง <input type="date" name="d2" value="{{ d.d2 }}"></label>
+  <select name="shift">
+    {% for k, v in d.shifts.items() %}
+    <option value="{{ k }}" {{ 'selected' if d.shift == k }}>{{ v }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">ดูข้อมูล</button>
+  {% set q = '?d1=' ~ d.d1 ~ '&d2=' ~ d.d2 ~ '&shift=' ~ d.shift %}
+  {% if export_enabled %}
+  <a class="dl" href="{{ url_for('export', fmt='jpg') }}{{ q }}">⬇ JPG</a>
+  <a class="dl" href="{{ url_for('export', fmt='png') }}{{ q }}">⬇ PNG</a>
+  <a class="dl" href="{{ url_for('export', fmt='pdf') }}{{ q }}">⬇ PDF</a>
+  <span class="hint">ส่งออกใช้เวลา ~10 วินาที</span>
+  {% endif %}
+  <span class="asof">ข้อมูล ณ {{ d.generated_at }}</span>
+</form>
+
+<script>
+(function () {
+  var bar = document.querySelector('.toolbar');
+  if (!bar) return;
+  var note = document.createElement('span');
+  note.className = 'dl-note';
+  note.hidden = true;
+  bar.appendChild(note);
+  bar.querySelectorAll('a.dl').forEach(function (a) {
+    a.addEventListener('click', function () {
+      if (a.dataset.busy) return;
+      a.dataset.busy = '1';
+      a.style.opacity = .5;
+      note.textContent = '⏳ กำลังสร้างไฟล์ ' + a.textContent.replace('⬇', '').trim() + ' …';
+      note.hidden = false;
+      setTimeout(function () { delete a.dataset.busy; a.style.opacity = 1; note.hidden = true; }, 25000);
+    });
+  });
+})();
+</script>
+
+{% set k = d.kpi %}
+<div class="sheet">
+
+  <!-- ============================================================ hero -->
+  <div class="hero">
+    {% if hero_url %}<div class="bg"><img src="{{ hero_url }}" alt=""></div>{% endif %}
+    <div class="logo"><img src="{{ logo_url }}" alt="ตรา{{ hospital }}"></div>
+    <div>
+      <div class="name">{{ hospital }}</div>
+      {% if hospital_en %}<div class="name-en">{{ hospital_en }}</div>{% endif %}
+      <div class="ttl">ER Dashboard <span>· แดชบอร์ดบริหารจัดการห้องฉุกเฉิน</span></div>
+      <div class="quote">“ทุกนาทีมีความหมาย — คัดกรองถูก พบแพทย์เร็ว ส่งต่อทันเวลา”</div>
+    </div>
+    <div class="meta">
+      <span class="a">{{ d.period_label }}</span>
+      <div class="b">{{ d.shift_name }} · ข้อมูลจาก HOSxP<br>ณ {{ d.generated_at }}</div>
+    </div>
+  </div>
+
+  <!-- ====================================================== 1. KPI -->
+  <section class="block">
+    <header><span class="no">1</span>
+      <span><span class="t">ER KPI Summary</span> <span class="st">ภาพรวมห้องฉุกเฉิน</span></span>
+      <span class="filters">
+        <span class="chip">📅 {{ d.period_label }}</span>
+        <span class="chip">🕐 {{ d.shift_name }}</span>
+      </span>
+    </header>
+    <div class="body">
+      <div class="kpis">
+        <div class="kpi g-pink"><span class="e">🚑</span>
+          <div class="l">ผู้มารับบริการ ER<small>ER Visits</small></div>
+          <div class="v">{{ '{:,}'.format(k.visits) }}</div><div class="u">ราย</div>
+          {{ delta(k.visits_delta) }}
+        </div>
+        <div class="kpi g-pink-d"><span class="e">📆</span>
+          <div class="l">เฉลี่ยต่อวัน<small>Visits per Day</small></div>
+          <div class="v">{{ k.per_day }}</div><div class="u">ราย/วัน · {{ k.period.days }} วัน</div>
+        </div>
+        <div class="kpi occ g-rose">
+          {{ donut([{'pct': k.l12_pct, 'color': '#ffffff'}], k.l12_pct ~ '%', '', 76, 8.4) }}
+          <div class="side"><span class="h">วิกฤต-ฉุกเฉิน</span>
+            ระดับ 1 · {{ k.l1 }} ราย<br>ระดับ 2 · {{ k.l2 }} ราย</div>
+        </div>
+        <div class="kpi g-orange"><span class="e">🛏</span>
+          <div class="l">Admit<small>รับไว้นอนโรงพยาบาล</small></div>
+          <div class="v">{{ k.admit }}</div><div class="u">ราย · {{ k.admit_pct }}% ของผู้มา ER</div>
+        </div>
+        <div class="kpi g-blue"><span class="e">🚐</span>
+          <div class="l">ส่งต่อ<small>Refer Out</small></div>
+          <div class="v">{{ k.refer }}</div><div class="u">ราย · {{ k.refer_pct }}% ของผู้มา ER</div>
+        </div>
+        <div class="kpi g-teal"><span class="e">⏱</span>
+          <div class="l">รอพบแพทย์เฉลี่ย<small>Door-to-Doctor</small></div>
+          <div class="v">{{ k.d2d }}</div><div class="u">นาที · บันทึก {{ k.d2d_cover }}%</div>
+          {{ delta(k.d2d_delta) }}
+        </div>
+        <div class="kpi g-purple"><span class="e">🔁</span>
+          <div class="l">กลับมา ER ซ้ำ<small>Revisit ภายใน 48 ชม.</small></div>
+          <div class="v">{{ k.revisit_rate }}%</div><div class="u">{{ k.revisit }} ราย</div>
+          {{ delta(k.revisit_delta) }}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 2. trend | 3. triage | 4-5 -->
+  <div class="row c3">
+
+    <section class="block">
+      <header><span class="no">2</span>
+        <span><span class="t">ER Visit Trend</span> <span class="st">รายเดือน</span></span></header>
+      <div class="body">
+        {% set mx = d.trend | map(attribute='nontrauma') | list + d.trend | map(attribute='trauma') | list %}
+        {% set top = ((mx | max) or 1) if mx else 1 %}
+        <div class="sh-key">
+          <span><i style="background:#ef4444"></i>Non-trauma</span>
+          <span><i style="background:#f59e0b"></i>Trauma</span>
+          <span><i style="height:3px;background:#7f1d1d"></i>Admit</span>
+        </div>
+        <svg viewBox="0 0 360 200" width="100%" height="212">
+          {% for g in range(5) %}
+            {% set y = 18 + g * 36 %}
+            <line x1="28" y1="{{ y }}" x2="356" y2="{{ y }}" stroke="#f8e3e3"></line>
+            <text x="24" y="{{ y + 3 }}" font-size="8" font-family="Sarabun" fill="#c09a9a"
+                  text-anchor="end">{{ (top * (4 - g) / 4) | round | int }}</text>
+          {% endfor %}
+          {% set bw = 328 / (d.trend | length) %}
+          {% for t in d.trend %}
+            {% set cx = 28 + bw * loop.index0 %}
+            {% set hn = 144 * t.nontrauma / top %}
+            {% set ht = 144 * t.trauma / top %}
+            <rect x="{{ cx + bw*0.16 }}" y="{{ 162 - hn }}" width="{{ bw*0.3 }}" height="{{ hn }}" rx="2.5" fill="#ef4444"></rect>
+            <rect x="{{ cx + bw*0.5 }}" y="{{ 162 - ht }}" width="{{ bw*0.3 }}" height="{{ ht }}" rx="2.5" fill="#f59e0b"></rect>
+            <text x="{{ cx + bw*0.5 }}" y="176" font-size="9" font-family="Sarabun" fill="#a57c7c" text-anchor="middle">{{ t.label }}</text>
+          {% endfor %}
+          {% set amax = (d.trend | map(attribute='admit') | max) or 1 %}
+          <polyline fill="none" stroke="#7f1d1d" stroke-width="2.2" stroke-linejoin="round"
+            points="{% for t in d.trend %}{{ 28 + bw*(loop.index0 + 0.5) }},{{ 150 - 60 * t.admit / amax }} {% endfor %}"></polyline>
+          {% for t in d.trend %}
+            <circle cx="{{ 28 + bw*(loop.index0 + 0.5) }}" cy="{{ 150 - 60 * t.admit / amax }}"
+                    r="2.8" fill="#fff" stroke="#7f1d1d" stroke-width="1.6"></circle>
+            {% if loop.last %}<text x="{{ 28 + bw*(loop.index0 + 0.5) }}" y="{{ 142 - 60 * t.admit / amax }}"
+                  font-size="9.5" font-family="Kanit" font-weight="700" fill="#7f1d1d" text-anchor="end">{{ t.admit }}</text>{% endif %}
+          {% endfor %}
+        </svg>
+        {% set n = d.trend | length %}
+        <div class="note">📈 เฉลี่ย {{ n }} เดือนล่าสุด — ผู้มา ER
+          <b>{{ '{:,}'.format(((d.trend | sum(attribute='visits')) / n) | round | int) }}</b> ราย/เดือน ·
+          Admit <b>{{ ((d.trend | sum(attribute='admit')) / n) | round | int }}</b> ราย/เดือน</div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">3</span>
+        <span><span class="t">Triage &amp; Door-to-Doctor</span>
+        <span class="st">ระดับความเร่งด่วน · เวลารอพบแพทย์</span></span></header>
+      <div class="body">
+        <table class="t tri">
+          <tr><th>ระดับ</th><th>ราย</th><th>รอพบแพทย์</th><th>เป้าหมาย</th><th>Admit/Refer</th></tr>
+          {% for it in d.triage['items'] %}
+          <tr>
+            <td class="l"><span class="lvl" style="background:{{ it.color }}">{{ it.level }}</span>{{ it.name }}</td>
+            <td>{{ it.value }}<span class="sub">{{ it.pct }}%</span></td>
+            <td><span class="pp {{ it.status }}">{{ it.d2d if it.d2d is not none else '–' }}{{ ' นาที' if it.d2d is not none }}</span>
+              <span class="sub">บันทึก {{ it.d2d_cover }}%</span></td>
+            <td>{{ it.target }}</td>
+            <td>{{ it.ar_pct }}%</td>
+          </tr>
+          {% endfor %}
+          <tr class="tot">
+            <td class="l">รวม</td><td>{{ '{:,}'.format(d.triage.total) }}</td>
+            <td><span class="pp">{{ k.d2d }} นาที</span></td><td>–</td>
+            <td>{{ (k.admit_pct + k.refer_pct) | round(1) }}%</td>
+          </tr>
+        </table>
+        <div class="note">⏱ เวลาพบแพทย์ = เวลาที่<b>เร็วที่สุด</b>ของ กดเริ่มตรวจ / สั่ง Lab / X-ray / ยา
+          · ยังไม่ลงระดับ {{ d.triage.missing }} ราย
+          <span class="nt">(เวลาจากการบันทึกในระบบ ไม่ใช่เวลาตรวจจริง · นับเฉพาะ 0–4 ชม. หลังเข้า ER)</span></div>
+      </div>
+    </section>
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <section class="block" style="margin-top:0">
+        <header><span class="no">4</span>
+          <span><span class="t">Disposition</span> <span class="st">ผลการจำหน่ายจาก ER</span></span></header>
+        <div class="body">
+          <div class="donut-wrap">
+            {{ donut(d.dispo['items'], '{:,}'.format(d.dispo.total)) }}
+            {{ legend(d.dispo['items']) }}
+          </div>
+        </div>
+      </section>
+
+      <section class="block" style="margin-top:0">
+        <header><span class="no">5</span>
+          <span><span class="t">Case Type</span> <span class="st">ประเภทผู้ป่วย</span></span></header>
+        <div class="body">
+          {% set cmax = (d.case['items'] | map(attribute='value') | max) or 1 %}
+          <div class="bars">
+            {% for it in d.case['items'] %}
+            <div class="b">
+              <div class="n">{{ it.value }}</div><div class="p">({{ it.pct }}%)</div>
+              <div class="fill" style="height:{{ (80 * it.value / cmax) | round(1) }}px;background:{{ it.color }}"></div>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="bars-x">{% for it in d.case['items'] %}<span>{{ it.label }}</span>{% endfor %}</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ====================== 6. hourly | 7. shift load | 8. time to dispo -->
+  <div class="row c3b">
+
+    <section class="block">
+      <header><span class="no">6</span>
+        <span><span class="t">Arrivals by Hour</span>
+        <span class="st">ผู้ป่วยมาถึงรายชั่วโมง (รวมทั้งช่วง)</span></span></header>
+      <div class="body">
+        <div class="sh-key">
+          <span><i class="sh-D"></i>ดึก 00–08</span>
+          <span><i class="sh-C"></i>เช้า 08–16</span>
+          <span><i class="sh-B"></i>บ่าย 16–24</span>
+        </div>
+        {% set hx = d.hourly %}
+        <div class="hourly">
+          {% for h in hx.hours %}
+          <div class="b {{ 'pk' if h.h == hx.peak.h }}" title="{{ h.h }}:00 · {{ h.value }} ราย (เฉลี่ย {{ h.avg }}/วัน)">
+            <div class="n">{{ h.value }}</div>
+            <div class="fill sh-{{ h.shift }}" style="height:{{ (110 * h.value / hx.max) | round(1) }}px"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="hourly-x">{% for h in hx.hours %}<span>{{ h.h }}</span>{% endfor %}</div>
+        <div class="note">🔥 ช่วงพีค <b>{{ '%02d' | format(hx.peak.h) }}:00–{{ '%02d' | format(hx.peak.h + 1) }}:00 น.</b>
+          มาเฉลี่ย <b>{{ hx.peak.avg }}</b> ราย/วัน</div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">7</span>
+        <span><span class="t">Shift Workload</span>
+        <span class="st">ภาระงานรายเวร (ทุกเวร)</span></span></header>
+      <div class="body">
+        <table class="t">
+          <tr><th>เวร</th><th>ราย/เวร</th><th>ระดับ 1-2</th><th>Trauma</th><th>Admit</th><th>Refer</th></tr>
+          {% for s in d.load %}
+          <tr>
+            <td class="l">{{ s.name }}<span class="sub">{{ s.time }}</span></td>
+            <td><b style="font-family:Kanit;color:#b91c1c">{{ s.per_shift }}</b><span class="sub">รวม {{ s.value }} ({{ s.pct }}%)</span></td>
+            <td>{{ s.l12 }}</td><td>{{ s.trauma }}</td><td>{{ s.admit }}</td><td>{{ s.refer }}</td>
+          </tr>
+          {% endfor %}
+          <tr class="tot">
+            <td class="l">รวม</td>
+            <td>{{ '{:,}'.format(d.load | sum(attribute='value')) }}</td>
+            <td>{{ d.load | sum(attribute='l12') }}</td><td>{{ d.load | sum(attribute='trauma') }}</td>
+            <td>{{ d.load | sum(attribute='admit') }}</td><td>{{ d.load | sum(attribute='refer') }}</td>
+          </tr>
+        </table>
+        <div class="note">🚑 EMS รับผู้ป่วย {{ d.load | sum(attribute='ems') }} ราย
+          <span class="nt">(นับ Admit/Refer ตามเวลาเข้า ER — ต่างจากใบสรุปเวรที่นับตามเวลา admit จริง)</span></div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">8</span>
+        <span><span class="t">Time in ER</span>
+        <span class="st">เข้า ER → Admit / Refer</span></span></header>
+      <div class="body">
+        <div class="ttd">
+          <div class="it"><div class="h">🛏 ER → Admit</div>
+            <div class="v">{{ d.ttd.admit.avg }}<span class="u">นาที</span></div>
+            <div class="s">{{ d.ttd.admit.n }} ราย · เกิน {{ d.ttd.cutoff }} นาที {{ d.ttd.admit.over }} ราย ({{ d.ttd.admit.over_pct }}%)</div></div>
+          <div class="it ref"><div class="h">🚐 ER → Refer</div>
+            <div class="v">{{ d.ttd.refer.avg }}<span class="u">นาที</span></div>
+            <div class="s">{{ d.ttd.refer.n }} ราย · เกิน {{ d.ttd.cutoff }} นาที {{ d.ttd.refer.over }} ราย ({{ d.ttd.refer.over_pct }}%)</div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================== 9. profile | 10. alert -->
+  <div class="row c2">
+
+    <section class="block">
+      <header><span class="no">9</span>
+        <span><span class="t">Patient Profile</span>
+        <span class="st">ผู้มา ER ในช่วงที่เลือก ({{ '{:,}'.format(d.profile.total) }} ราย)</span></span></header>
+      <div class="body">
+        <div class="profile">
+          <div>
+            <div class="mini-h">🚪 ช่องทางมาถึง</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+              {{ donut(d.profile.arrival, '{:,}'.format(d.profile.total), 'ราย', 96) }}
+              {{ legend(d.profile.arrival) }}
+            </div>
+          </div>
+          <div>
+            <div class="mini-h">👥 ตามช่วงอายุ</div>
+            {% set amax = (d.profile.ages | map(attribute='value') | max) or 1 %}
+            <div class="bars" style="height:118px">
+              {% for a in d.profile.ages %}
+              <div class="b"><div class="n">{{ a.pct }}%</div>
+                <div class="fill" style="height:{{ (70 * a.value / amax) | round(1) }}px;background:{{ a.color }}"></div></div>
+              {% endfor %}
+            </div>
+            <div class="bars-x">{% for a in d.profile.ages %}<span>{{ a.label }}</span>{% endfor %}</div>
+          </div>
+          <div>
+            <div class="mini-h">🩺 โรคหลักที่พบบ่อย (Top 5)</div>
+            <div class="hbars">
+              {% for x in d.profile.dx %}
+              <div class="hb">
+                <span class="nm" title="{{ x.label }}">{{ x.label }} <span class="code">[{{ x.code }}]</span></span>
+                <span class="bar"><span class="track"><span class="fill" style="width:{{ x.bar }}%"></span></span>
+                  <span class="vl">{{ x.value }} ราย</span></span>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="note" style="margin-top:4px;font-size:12.5px">ไม่รวมผู้มารับบริการ (ทำแผล ฉีดยา ฯลฯ)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block alert-card">
+      <header><span class="no">10</span>
+        <span><span class="t">Alert &amp; Action</span> <span class="st">รายการที่ต้องติดตาม</span></span></header>
+      <div class="body">
+        <table class="t alerts">
+          <colgroup><col style="width:40%"><col><col><col style="width:34%"></colgroup>
+          <tr><th>ประเด็น</th><th class="w">หน่วยงาน</th><th>สถานะ</th><th>Action</th></tr>
+          {% for a in d.alerts %}
+          <tr>
+            <td class="l"><span class="lv">{{ {'high': '🚨', 'mid': '⚠️', 'info': '📝'}.get(a.level, '✅') }}</span>
+              {{ a.issue }}<small class="wm">{{ a.where }}</small></td>
+            <td class="nw w">{{ a.where }}</td>
+            <td class="nw"><span class="pp {{ {'high': 'bad', 'mid': 'watch', 'info': 'flat'}.get(a.level, 'good') }}">{{ a.status }}</span></td>
+            <td class="l">{{ a.action }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================== 11. quality | 12. refer destinations -->
+  {% set qq = d.quality %}
+  <div class="row c2">
+    <section class="block">
+      <header><span class="no">11</span>
+        <span><span class="t">ER Quality</span>
+        <span class="st">คุณภาพบริการและการบันทึกข้อมูล · {{ '{:,}'.format(qq.total) }} ราย</span></span></header>
+      <div class="body">
+        <div class="qgrid">
+          <div class="qt"><div class="l">EMS นำส่ง</div>
+            <div class="v">{{ qq.ems }}<span class="u">ราย</span></div>
+            <div class="p">ALS {{ qq.ems_als }} · FR {{ qq.ems_fr }} · {{ qq.ems_pct }}%</div></div>
+          <div class="qt"><div class="l">รับส่งต่อ (Refer in)</div>
+            <div class="v">{{ qq.refer_in }}<span class="u">ราย</span></div>
+            <div class="p">{{ qq.refer_in_pct }}% ของผู้มา ER</div></div>
+          <div class="qt {{ 'warn' if k.revisit_rate > 5 else 'ok' }}"><div class="l">กลับมา ER ซ้ำ ≤ 48 ชม.</div>
+            <div class="v">{{ k.revisit }}<span class="u">ราย</span></div>
+            <div class="p">{{ k.revisit_rate }}% · เกณฑ์ ≤ 5%</div></div>
+          <div class="qt {{ 'warn' if qq.ama > 0 }}"><div class="l">ปฏิเสธการรักษา / หนีกลับ</div>
+            <div class="v">{{ qq.ama }}<span class="u">ราย</span></div>
+            <div class="p">{{ qq.ama_pct }}% ของผู้มา ER</div></div>
+          <div class="qt {{ 'warn' if k.d2d_cover < 80 else 'ok' }}"><div class="l">มีเวลาพบแพทย์</div>
+            <div class="v">{{ k.d2d_cover }}<span class="u">%</span></div>
+            <div class="p">{{ k.d2d_n }} ราย · เป้าหมาย ≥ 80%</div></div>
+          <div class="qt {{ 'warn' if d.triage.missing_pct > 5 else 'ok' }}"><div class="l">ลงระดับ Triage</div>
+            <div class="v">{{ (100 - d.triage.missing_pct) | round(1) }}<span class="u">%</span></div>
+            <div class="p">ยังไม่ลง {{ d.triage.missing }} ราย</div></div>
+          <div class="qt {{ 'warn' if qq.no_dch_pct > 2 else 'ok' }}"><div class="l">ยังไม่ระบุการจำหน่าย</div>
+            <div class="v">{{ qq.no_dch }}<span class="u">ราย</span></div>
+            <div class="p">{{ qq.no_dch_pct }}% · เกณฑ์ ≤ 2%</div></div>
+          <div class="qt {{ 'warn' if qq.no_pdx_pct > 2 else 'ok' }}"><div class="l">ยังไม่ลงรหัสโรคหลัก</div>
+            <div class="v">{{ qq.no_pdx }}<span class="u">ราย</span></div>
+            <div class="p">{{ qq.no_pdx_pct }}% · เกณฑ์ ≤ 2%</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">12</span>
+        <span><span class="t">Refer Destinations</span>
+        <span class="st">ส่งต่อจาก ER ไปโรงพยาบาลใด ({{ d.refer.total }} ราย)</span></span></header>
+      <div class="body">
+        {% if d.refer['items'] %}
+        <div class="hbars">
+          {% for x in d.refer['items'] %}
+          <div class="hb">
+            <span class="nm" title="{{ x.label }}">{{ x.label }}{% if x.code != '-' %} <span class="code">[{{ x.code }}]</span>{% endif %}</span>
+            <span class="bar"><span class="track"><span class="fill" style="width:{{ x.bar }}%;background:linear-gradient(90deg,#2f6fe4,#5fb0ff)"></span></span>
+              <span class="vl">{{ x.value }} ราย</span></span>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="note">🚐 ER → Refer เฉลี่ย <b>{{ d.ttd.refer.avg }} นาที</b> · ส่งต่อ {{ k.refer_pct }}% ของผู้มา ER</div>
+        {% else %}
+        <div class="note center">✅ ไม่มีการส่งต่อในช่วงที่เลือก</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================== 13. refer dx | 14. admit dx | 15. injury cause -->
+  {% macro ranked(r, color, unit='ราย', empty='ไม่มีข้อมูลในช่วงที่เลือก') %}
+    {% if r['items'] %}
+    <ol class="rank">
+      {% for x in r['items'] %}
+      <li>
+        <span class="no" style="background:{{ color }}">{{ x.rank }}</span>
+        <span class="tx">
+          <span class="nm" title="{{ x.label }}">{{ x.label }} <span class="code">[{{ x.code }}]</span></span>
+          <span class="bar"><span class="track"><span class="fill" style="width:{{ x.bar }}%;background:{{ color }}"></span></span>
+            <span class="vl">{{ x.value }}</span><span class="pc">{{ x.pct }}%</span></span>
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}<div class="note center">{{ empty }}</div>{% endif %}
+  {% endmacro %}
+  <div class="row c3e">
+    <section class="block">
+      <header><span class="no">13</span>
+        <span><span class="t">Top 10 Refer Diagnoses</span>
+        <span class="st">10 อันดับโรคที่ส่งต่อ ({{ d.refer_dx.total }} ราย)</span></span></header>
+      <div class="body">{{ ranked(d.refer_dx, 'linear-gradient(90deg,#2f6fe4,#5fb0ff)', empty='✅ ไม่มีการส่งต่อในช่วงที่เลือก') }}</div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">14</span>
+        <span><span class="t">Top 10 Admit Diagnoses</span>
+        <span class="st">10 อันดับโรคที่ Admit จาก ER ({{ d.admit_dx.total }} ราย)</span></span></header>
+      <div class="body">{{ ranked(d.admit_dx, 'linear-gradient(90deg,#ea580c,#fb923c)') }}</div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">15</span>
+        <span><span class="t">Top 10 Injury Causes</span>
+        <span class="st">10 อันดับสาเหตุการบาดเจ็บ ({{ d.injury.total }} ราย)</span></span></header>
+      <div class="body">{{ ranked(d.injury, 'linear-gradient(90deg,#dc2626,#fb7185)') }}</div>
+    </section>
+  </div>
+  <div class="note" style="margin-top:12px">📋 โรคที่ส่งต่อ/Admit ใช้โรคหลักที่ ER ลงรหัสไว้ (ovstdiag) ·
+    สาเหตุการบาดเจ็บใช้รหัสสาเหตุภายนอก ICD-10 V01–Y98 (จัดกลุ่ม 3 หลัก)
+    <span class="nt">ไม่นับมารับบริการต่อเนื่อง เช่น ฉีดวัคซีนพิษสุนัขบ้าเข็มถัดไป ทำแผล</span></div>
+
+  <!-- ============================== 16. from OPD | 17. red > 60 | 18. MCI -->
+  {% set op, rd, mc = d.opd, d.red, d.mci %}
+  <div class="row c3m">
+    <section class="block">
+      <header><span class="no">16</span>
+        <span><span class="t">From OPD</span> <span class="st">ส่งมาจาก OPD / แผนกอื่น</span></span></header>
+      <div class="body">
+        <div class="big"><span class="v">{{ '{:,}'.format(op.n) }}</span><span class="u">ราย · {{ op.pct }}% ของผู้มา ER</span></div>
+        {% if op['items'] %}
+        <div class="hbars" style="margin-top:10px">
+          {% for x in op['items'] %}
+          <div class="hb">
+            <span class="nm" title="{{ x.label }}">{{ x.label }}{% if x.code != '-' %} <span class="code">[{{ x.code }}]</span>{% endif %}</span>
+            <span class="bar"><span class="track"><span class="fill" style="width:{{ x.bar }}%;background:linear-gradient(90deg,#7c3aed,#a78bfa)"></span></span>
+              <span class="vl">{{ '{:,}'.format(x.value) }} ราย</span></span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div class="note">ในจำนวนนี้ ระดับ 1-2 <b>{{ '{:,}'.format(op.l12) }}</b> ราย ({{ op.l12_pct }}%) · Admit/Refer <b>{{ '{:,}'.format(op.ar) }}</b> ราย ({{ op.ar_pct }}%)</div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">17</span>
+        <span><span class="t">Red &gt; {{ rd.cutoff }} min</span> <span class="st">สีแดงอยู่ ER เกิน {{ rd.cutoff }} นาที</span></span></header>
+      <div class="body">
+        <div class="big red"><span class="v">{{ rd.over }}</span><span class="u">จาก {{ rd.n }} ราย · {{ rd.pct }}%</span></div>
+        <div class="ttd" style="margin-top:10px;grid-template-columns:1fr 1fr">
+          <div class="it"><div class="h">🛏 Admit</div><div class="v" style="font-size:32px">{{ rd.over_admit }}<span class="u">ราย</span></div></div>
+          <div class="it ref"><div class="h">🚐 Refer</div><div class="v" style="font-size:32px">{{ rd.over_refer }}<span class="u">ราย</span></div></div>
+        </div>
+        <div class="note">⏱ ระดับ 1 อยู่ ER เฉลี่ย <b>{{ rd.avg }} นาที</b> · นานสุด {{ rd.max }} นาที
+          <span class="nt">(เข้า ER → ลงทะเบียน Admit / เวลาส่งต่อ · เฉพาะระดับ 1 ที่ Admit/Refer)</span></div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">18</span>
+        <span><span class="t">Mass Casualty</span> <span class="st">อุบัติเหตุหมู่ (≥ {{ mc.min }} รายใน {{ mc.window }} นาที)</span></span></header>
+      <div class="body">
+        <div class="big"><span class="v">{{ mc.count }}</span><span class="u">ครั้ง · ผู้บาดเจ็บรวม {{ mc.patients }} ราย</span></div>
+        {% if mc.events %}
+        <table class="t tri mci" style="margin-top:10px">
+          <tr><th>วัน-เวลา</th><th>สาเหตุ</th><th>ราย</th><th>ระดับ 1-2</th><th>Admit/Refer</th></tr>
+          {% for ev in mc.events %}
+          <tr><td class="l">{{ ev.when }}</td><td>{{ ev.group }}<span class="sub">{{ ev.icd }}</span></td><td><b style="font-family:Kanit;color:#b91c1c">{{ ev.n }}</b></td>
+            <td>{{ ev.l12 }}</td><td>{{ ev.admit }} / {{ ev.refer }}</td></tr>
+          {% endfor %}
+        </table>
+        {% if mc.more %}<div class="note">และอีก {{ mc.more }} ครั้ง</div>{% endif %}
+        {% else %}
+        <div class="note center">✅ ไม่พบอุบัติเหตุหมู่ในช่วงที่เลือก</div>
+        {% endif %}
+        <div class="note">🚨 จับจากผู้บาดเจ็บ<b>สาเหตุกลุ่มเดียวกัน</b> (ICD-10 V–Y) เข้า ER ใกล้กัน
+          <span class="nt">เป็นการคัดกรองอัตโนมัติ — หัวหน้า ER ควรยืนยันว่าเป็นเหตุเดียวกันจริง</span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================================================ footer -->
+  <div class="foot">
+    <div class="src"><b>แหล่งข้อมูล (Data Source)</b> —
+      HOSxP: er_regist / ovst / service_time / lab_head / xray_report / opitemrece / ovstdiag / icd101 / referout / ipt / patient · MariaDB</div>
+    <div class="tag">“ข้อมูลดี ห้องฉุกเฉินดีขึ้น<br>ผู้ป่วยวิกฤตได้รับการดูแลทันเวลา”</div>
+  </div>
+  <div class="appinfo">
+    <span><b>ER Dashboard</b> เวอร์ชัน {{ version }}</span>
+    <span>📞 ติดต่อ: {{ contact }}</span>
+    {% if dev_contact and dev_contact != contact %}<span>🛠 ผู้พัฒนา: {{ dev_contact }}</span>{% endif %}
+  </div>
+
+</div>
+</body>
+</html>

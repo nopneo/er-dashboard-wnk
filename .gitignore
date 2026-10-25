@@ -1,0 +1,17 @@
+.env
+out/
+__pycache__/
+*.pyc
+dist/
+.venv/
+.pytest_cache/
+.claude/
+/er_*.jpg
+
+# เฉพาะโรงพยาบาลผู้พัฒนา (รพ.วังน้ำเขียว) — ไม่ขึ้น GitHub
+static/img/hospital_logo.png
+static/img/hero.jpg
+# คลิปนำเสนอ (เสียงพากย์ เฟรมอัดหน้าจอ เบอร์ติดต่อ)
+docs/video/
+# ไฟล์ชั่วคราวตอนสร้างคู่มือ PDF
+docs/manual/_manual_build.html

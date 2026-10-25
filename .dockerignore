@@ -1,0 +1,14 @@
+.env
+.git
+.venv
+.claude
+.pytest_cache
+__pycache__
+*.pyc
+out
+dist
+docs
+/er_*.jpg
+# โลโก้/ภาพพื้นหลังของ รพ.ผู้พัฒนา — image กลางใช้โลโก้กลาง static/img/logo.png
+static/img/hospital_logo.png
+static/img/hero.jpg

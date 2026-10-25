@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>คู่มือติดตั้ง ER Dashboard</title>
+<style>
+@font-face { font-family: Sarabun; font-weight: 400; src: url('../../static/fonts/Sarabun-Regular.ttf'); }
+@font-face { font-family: Sarabun; font-weight: 600; src: url('../../static/fonts/Sarabun-SemiBold.ttf'); }
+@font-face { font-family: Sarabun; font-weight: 700; src: url('../../static/fonts/Sarabun-Bold.ttf'); }
+@font-face { font-family: Kanit; font-weight: 500; src: url('../../static/fonts/Kanit-Medium.ttf'); }
+@font-face { font-family: Kanit; font-weight: 600; src: url('../../static/fonts/Kanit-SemiBold.ttf'); }
+@font-face { font-family: Kanit; font-weight: 700; src: url('../../static/fonts/Kanit-Bold.ttf'); }
+
+@page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+:root { --p: #dc2626; --pd: #991b1b; --navy: #7f1d1d; --muted: #8a5a5a; --line: #f6dada; --soft: #fff5f5; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-family: Sarabun, sans-serif; font-size: 10.6pt; line-height: 1.62; color: #3d2222; margin: 0; }
+h1, h2, h3 { font-family: Kanit, sans-serif; color: var(--pd); line-height: 1.3; }
+h2 { font-size: 16pt; font-weight: 600; margin: 0 0 8px; padding-bottom: 5px; border-bottom: 2.5px solid var(--line);
+     break-after: avoid; }
+h2 .n { display: inline-block; min-width: 30px; height: 30px; line-height: 30px; text-align: center; border-radius: 9px;
+        background: var(--p); color: #fff; font-size: 13pt; margin-right: 8px; }
+h3 { font-size: 12pt; font-weight: 600; margin: 14px 0 4px; color: var(--navy); break-after: avoid; }
+section { break-before: page; }
+section.cont { break-before: auto; margin-top: 22px; }
+p { margin: 5px 0 8px; }
+ul, ol { margin: 4px 0 8px; padding-left: 22px; }
+li { margin: 2px 0; }
+code { font-family: Consolas, "Courier New", monospace; font-size: 9.2pt; background: #fdecec; color: #991b1b;
+       padding: 0 4px; border-radius: 4px; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 8.9pt; line-height: 1.45; background: #2a1414; color: #fde8e8;
+      padding: 10px 13px; border-radius: 10px; margin: 6px 0 10px; white-space: pre-wrap; word-break: break-all;
+      break-inside: avoid; }
+pre .c { color: #d6a3a3; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 9.6pt; break-inside: auto; }
+th { background: var(--p); color: #fff; font-family: Kanit; font-weight: 500; text-align: left; padding: 5px 8px; }
+td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:nth-child(even) td { background: #fffafa; }
+tr { break-inside: avoid; }
+.box { border-radius: 12px; padding: 9px 13px; margin: 8px 0 10px; break-inside: avoid; }
+.box b:first-child { font-family: Kanit; font-weight: 600; }
+.tip { background: #eefaf6; border: 1.5px solid #bfe9da; }
+.warn { background: #fff4e6; border: 1.5px solid #fbd38d; }
+.info { background: var(--soft); border: 1.5px solid var(--line); }
+.check li { list-style: none; margin-left: -18px; }
+.check li::before { content: "☐  "; color: var(--p); font-weight: 700; }
+.shot { display: block; margin: 8px auto; border-radius: 10px; border: 1px solid var(--line); }
+.cap { text-align: center; font-size: 9pt; color: var(--muted); margin-top: -2px; }
+.two { display: flex; gap: 16px; align-items: flex-start; }
+.two > div { flex: 1; min-width: 0; }
+table.blk { font-size: 9pt; } table.blk td { padding: 3px 7px; } table.blk td:first-child { white-space: nowrap; }
+
+.cover { height: 263mm; display: flex; flex-direction: column; justify-content: center; text-align: center;
+         background: linear-gradient(150deg, #7f1d1d, #dc2626 55%, #f97316); color: #fff; border-radius: 22px;
+         padding: 30px; position: relative; overflow: hidden; }
+.cover img.ic { width: 150px; margin: 0 auto 18px; border-radius: 50%; filter: drop-shadow(0 10px 22px rgba(0,0,0,.3)); }
+.cover h1 { color: #fff; font-size: 34pt; font-weight: 700; margin: 0; }
+.cover .s { font-family: Kanit; font-size: 16pt; font-weight: 500; margin: 6px 0 0; opacity: .95; }
+.cover .pill { display: inline-block; margin: 26px auto 0; background: #fff; color: var(--pd); font-family: Kanit;
+               font-weight: 600; font-size: 13pt; padding: 7px 24px; border-radius: 99px; }
+.cover .meta { margin-top: 40px; font-size: 11pt; line-height: 1.8; opacity: .95; }
+.cover .foot { position: absolute; left: 0; right: 0; bottom: 22px; font-size: 9.5pt; opacity: .85; }
+.toc { columns: 2; column-gap: 26px; font-size: 11pt; margin-top: 8px; }
+.toc div { break-inside: avoid; padding: 3px 0; border-bottom: 1px dotted #ecc9c9; }
+.toc b { color: var(--p); font-family: Kanit; display: inline-block; width: 24px; }
+.steps { counter-reset: s; padding-left: 26px; }
+.steps > li { list-style: none; counter-increment: s; position: relative; padding-left: 6px; margin: 6px 0; }
+.steps > li::before { content: counter(s); position: absolute; left: -24px; top: 1px; width: 20px; height: 20px;
+                      border-radius: 50%; background: var(--p); color: #fff; font: 600 9.5pt/20px Kanit; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <img class="ic" src="../../static/icon/icon-512.png" alt="">
+  <h1>คู่มือติดตั้ง ER Dashboard</h1>
+  <div class="s">แดชบอร์ดบริหารจัดการห้องฉุกเฉิน สำหรับโรงพยาบาลที่ใช้ HOSxP</div>
+  <div><span class="pill">เวอร์ชัน {{VERSION}}</span></div>
+  <div class="meta">
+    สำหรับผู้ดูแลระบบสารสนเทศของโรงพยาบาล<br>
+    ดาวน์โหลด: github.com/nopneo/er-dashboard-wnk/releases
+  </div>
+  <div class="foot">พัฒนาโดย นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว จ.นครราชสีมา · ใช้ฟรี ใบอนุญาต MIT</div>
+</div>
+
+<section>
+  <h2>สารบัญ</h2>
+  <div class="toc">
+    <div><b>1</b> ER Dashboard คืออะไร</div>
+    <div><b>2</b> สิ่งที่ต้องเตรียม</div>
+    <div><b>3</b> สร้างบัญชีฐานข้อมูลอ่านอย่างเดียว</div>
+    <div><b>4</b> ติดตั้งบน Linux (แนะนำ)</div>
+    <div><b>5</b> ติดตั้งบน Windows</div>
+    <div><b>6</b> ติดตั้งด้วย Docker</div>
+    <div><b>7</b> ตั้งค่า (.env)</div>
+    <div><b>8</b> ปรับให้ตรงกับการบันทึกของโรงพยาบาล</div>
+    <div><b>9</b> เปิดผ่านโดเมนของโรงพยาบาล</div>
+    <div><b>10</b> ตรวจสอบหลังติดตั้ง</div>
+    <div><b>11</b> ความปลอดภัย</div>
+    <div><b>12</b> อัปเดตและแก้ปัญหา</div>
+    <div><b>13</b> นิยามตัวชี้วัด</div>
+    <div><b>14</b> ติดต่อและใบอนุญาต</div>
+  </div>
+
+  <section class="cont">
+    <h2><span class="n">1</span>ER Dashboard คืออะไร</h2>
+    <p>เว็บแอปที่ดึงข้อมูลห้องฉุกเฉินจากฐานข้อมูล HOSxP <b>แบบสด</b> แล้วแสดงเป็นอินโฟกราฟิกหน้าเดียว 18 บล็อก
+      หัวหน้าห้องฉุกเฉินและผู้บริหารเปิดดูได้ทั้งบนคอมพิวเตอร์และมือถือ กรองตามเวรได้ และกดส่งออกเป็น
+      JPG / PNG / PDF ไปใช้ในการประชุมได้ทันที</p>
+    <div class="two">
+      <div>
+        <ul>
+          <li><b>อ่านอย่างเดียว</b> — ไม่เขียน ไม่แก้ข้อมูลใน HOSxP</li>
+          <li><b>ไม่มีข้อมูลรายบุคคล</b> — แสดงเฉพาะตัวเลขรวม ไม่มี HN / ชื่อผู้ป่วย</li>
+          <li><b>ไม่ต้องคีย์ข้อมูลเพิ่ม</b> — ใช้ข้อมูลที่ ER บันทึกใน HOSxP อยู่แล้ว</li>
+          <li><b>ทำงานในโรงพยาบาล</b> — ไม่ส่งข้อมูลไปเซิร์ฟเวอร์ภายนอก</li>
+          <li><b>ใช้ฟรี</b> — โอเพนซอร์ส ใบอนุญาต MIT</li>
+        </ul>
+        <h3>18 บล็อกบนแดชบอร์ด</h3>
+        <table class="blk">
+          <tr><th style="width:40px">#</th><th>บล็อก</th></tr>
+          <tr><td>1</td><td>ตัวชี้วัดหลัก — ผู้มา ER, เฉลี่ย/วัน, ระดับ 1-2, Admit, Refer, เวลาพบแพทย์, กลับมาซ้ำ ≤ 48 ชม.</td></tr>
+          <tr><td>2–5</td><td>แนวโน้มรายเดือน · Triage &amp; เวลาพบแพทย์ · ผลการจำหน่าย · ประเภทผู้ป่วย</td></tr>
+          <tr><td>6–8</td><td>มาถึงรายชั่วโมง · ภาระงานรายเวร · เวลาใน ER → Admit / Refer</td></tr>
+          <tr><td>9–10</td><td>โปรไฟล์ผู้ป่วย · Alert &amp; Action</td></tr>
+          <tr><td>11–12</td><td>คุณภาพบริการและการบันทึก · ปลายทางส่งต่อ</td></tr>
+          <tr><td>13–15</td><td>10 อันดับโรคที่ Refer / Admit · 10 อันดับสาเหตุการบาดเจ็บ</td></tr>
+          <tr><td>16–18</td><td>ส่งมาจาก OPD · ผู้ป่วยระดับ 1 อยู่ ER เกิน 60 นาที · อุบัติเหตุหมู่</td></tr>
+        </table>
+      </div>
+      <div style="flex:.55">
+        <img class="shot" src="img/dashboard.jpg" style="width:100%">
+        <div class="cap">ตัวอย่างหน้าจอ (โรงพยาบาลวังน้ำเขียว)</div>
+      </div>
+    </div>
+  </section>
+</section>
+
+<section>
+  <h2><span class="n">2</span>สิ่งที่ต้องเตรียม</h2>
+  <table>
+    <tr><th style="width:28%">รายการ</th><th>ข้อกำหนด</th></tr>
+    <tr><td>เครื่องเซิร์ฟเวอร์</td><td>Linux (AlmaLinux / Rocky / RHEL 9, Ubuntu 22.04 ขึ้นไป) หรือ Windows 10/11/Server ·
+      CPU 2 core, RAM 2 GB, พื้นที่ว่าง 2 GB (ใช้ร่วมกับเครื่องที่มีอยู่แล้วได้)</td></tr>
+    <tr><td>Python</td><td>3.9 ขึ้นไป</td></tr>
+    <tr><td>ฐานข้อมูล HOSxP</td><td>MariaDB / MySQL ที่เครื่องนี้ต่อถึงได้ พอร์ต 3306 ·
+      <b>แนะนำให้ต่อเครื่อง Slave / Replica</b> ไม่ใช่ฐานหลักที่ใช้ให้บริการ</td></tr>
+    <tr><td>การบันทึกของ ER</td><td>ห้องฉุกเฉินใช้ระบบ ER ของ HOSxP (<code>er_regist</code> มีเวลาเข้า ER) และลงระดับความเร่งด่วน</td></tr>
+    <tr><td>บัญชีฐานข้อมูล</td><td>สิทธิ์ <code>SELECT</code> อย่างเดียว (หัวข้อ 3)</td></tr>
+    <tr><td>เบราว์เซอร์บนเซิร์ฟเวอร์</td><td>Chromium / Chrome / Edge — <b>เฉพาะเมื่อต้องการปุ่มส่งออก</b></td></tr>
+  </table>
+  <div class="box info"><b>ไฟล์ชุดติดตั้ง</b> — ดาวน์โหลด <code>er_dashboard-{{VERSION}}.zip</code> จาก
+    <code>github.com/nopneo/er-dashboard-wnk/releases</code> ภายในมีโปรแกรม คู่มือนี้ <code>INSTALL.md</code>
+    <code>SECURITY.md</code> และ <code>.env.example</code> — ไม่มีรหัสผ่านหรือข้อมูลของโรงพยาบาลใดติดมา</div>
+
+  <section class="cont">
+    <h2><span class="n">3</span>สร้างบัญชีฐานข้อมูลอ่านอย่างเดียว</h2>
+    <p>ล็อกอินฐานข้อมูล HOSxP ด้วยบัญชีผู้ดูแล แล้วรัน (เปลี่ยน IP เป็นเครื่องที่ติดตั้งแดชบอร์ด):</p>
+<pre>CREATE USER 'er_ro'@'192.168.1.50' IDENTIFIED BY '&lt;รหัสผ่านยาวอย่างน้อย 16 ตัว&gt;';
+GRANT SELECT ON hos.* TO 'er_ro'@'192.168.1.50';</pre>
+    <div class="box warn"><b>ห้ามใช้บัญชีที่เขียนข้อมูลได้</b> — แม้แอปจะตั้ง session เป็น READ ONLY ให้อีกชั้น
+      บัญชีควรมีสิทธิ์ SELECT อย่างเดียวและจำกัด host เสมอ</div>
+  </section>
+</section>
+
+<section>
+  <h2><span class="n">4</span>ติดตั้งบน Linux (แนะนำ)</h2>
+  <ol class="steps">
+    <li>แตกไฟล์และติดตั้งไลบรารี
+<pre>unzip er_dashboard-{{VERSION}}.zip -d /opt &amp;&amp; cd /opt/er_dashboard
+python3 -m venv .venv &amp;&amp; .venv/bin/pip install -r requirements.txt</pre></li>
+    <li>สร้างไฟล์ค่าตั้ง แล้วใส่ <code>DB_HOST</code> <code>DB_USER</code> <code>DB_PASS</code>
+<pre>cp .env.example .env &amp;&amp; nano .env</pre></li>
+    <li>ทดลองรัน แล้วเปิด <code>http://&lt;IP เครื่อง&gt;:6200/</code>
+<pre>.venv/bin/python app.py      <span class="c"># Ctrl+C เพื่อหยุด</span></pre></li>
+    <li>สร้างผู้ใช้สำหรับบริการ (ไม่ใช้ root) และตั้งสิทธิ์ไฟล์
+<pre>useradd -r -s /sbin/nologin erdash
+chown -R root:root /opt/er_dashboard
+chown root:erdash /opt/er_dashboard/.env &amp;&amp; chmod 640 /opt/er_dashboard/.env</pre></li>
+    <li>สร้างไฟล์บริการ <code>/etc/systemd/system/er-dashboard.service</code>
+<pre>[Unit]
+Description=ER Dashboard
+After=network.target
+
+[Service]
+User=erdash
+Group=erdash
+WorkingDirectory=/opt/er_dashboard
+ExecStart=/opt/er_dashboard/.venv/bin/gunicorn --bind 0.0.0.0:6200 --workers 3 --timeout 120 app:app
+Restart=always
+Environment=HOME=/var/lib/erdash
+StateDirectory=erdash
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target</pre></li>
+    <li>เปิดบริการ
+<pre>systemctl daemon-reload &amp;&amp; systemctl enable --now er-dashboard
+systemctl status er-dashboard</pre></li>
+  </ol>
+  <div class="box tip"><b>ปุ่มส่งออก</b> — ติดตั้ง Chromium (AlmaLinux: <code>dnf install chromium-headless</code>)
+    ถ้าไม่ต้องการ ตั้ง <code>ER_EXPORT=0</code> ใน .env เพื่อซ่อนปุ่ม</div>
+</section>
+
+<section>
+  <h2><span class="n">5</span>ติดตั้งบน Windows</h2>
+<pre>python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+copy .env.example .env  &amp;  notepad .env
+.venv\Scripts\waitress-serve --listen=0.0.0.0:6200 app:app</pre>
+  <p>ต้องการให้เปิดเองเมื่อเปิดเครื่อง ใช้ Task Scheduler หรือ NSSM ห่อคำสั่งสุดท้ายเป็นบริการ</p>
+
+  <section class="cont">
+    <h2><span class="n">6</span>ติดตั้งด้วย Docker</h2>
+<pre>docker build -t er-dashboard .                          <span class="c"># ไม่มีปุ่มส่งออก (image เล็ก)</span>
+docker build --target export -t er-dashboard-export .   <span class="c"># มี chromium</span>
+docker run -d -p 6200:8080 --env-file .env --restart unless-stopped er-dashboard</pre>
+  </section>
+
+  <section class="cont">
+    <h2><span class="n">7</span>ตั้งค่า (.env)</h2>
+    <table>
+      <tr><th style="width:34%">ค่า</th><th>ความหมาย</th></tr>
+      <tr><td><code>DB_HOST</code> <code>DB_PORT</code> <code>DB_NAME</code> <code>DB_USER</code> <code>DB_PASS</code></td><td>ฐานข้อมูล HOSxP (บัญชีอ่านอย่างเดียว)</td></tr>
+      <tr><td><code>PORT</code></td><td>พอร์ตของแอป (6200)</td></tr>
+      <tr><td><code>ER_HOSPITAL_NAME</code> / <code>_EN</code></td><td>ชื่อโรงพยาบาล (ไม่ใส่ = อ่านจาก <code>opdconfig</code>)</td></tr>
+      <tr><td><code>ER_CONTACT</code></td><td>ช่องทางติดต่อท้ายหน้า</td></tr>
+      <tr><td><code>ER_DEPCODE</code></td><td>รหัสแผนก ER (ค่าเริ่มต้น <code>011</code>)</td></tr>
+      <tr><td><code>ER_NOT_DEPCODES</code></td><td>รหัสที่ไม่ใช่แผนกจริง (ค่าเริ่มต้น <code>999</code> = กลับบ้าน)</td></tr>
+      <tr><td><code>ER_ST_DOCTOR_COL</code></td><td>คอลัมน์ <code>service_time</code> ที่ ER กด "เริ่มตรวจ" (ค่าเริ่มต้น <code>service5</code>)</td></tr>
+      <tr><td><code>ER_RED_MAX_MIN</code></td><td>เกณฑ์ผู้ป่วยระดับ 1 อยู่ใน ER (60 นาที)</td></tr>
+      <tr><td><code>ER_MCI_MIN</code> / <code>ER_MCI_WINDOW</code></td><td>อุบัติเหตุหมู่: ≥ 5 ราย ภายใน 60 นาที</td></tr>
+      <tr><td><code>ER_BOARDING_MIN</code></td><td>เข้า ER → Admit/Refer เกินกี่นาทีถือว่านาน (120)</td></tr>
+      <tr><td><code>ER_MAX_DAYS</code> / <code>ER_CACHE_TTL</code> / <code>ER_DB_TIMEOUT</code></td><td>ช่วงวันที่สูงสุด (366) · อายุแคช (120 วิ) · timeout ต่อคำสั่ง (60 วิ)</td></tr>
+      <tr><td><code>ER_EXPORT</code></td><td><code>0</code> = ปิดปุ่มส่งออก</td></tr>
+    </table>
+    <p><b>โลโก้และภาพพื้นหลัง</b> — วาง <code>static/img/hospital_logo.png</code> (สี่เหลี่ยมจัตุรัส) และ
+      <code>static/img/hero.jpg</code> (แนวนอน) แล้วรีสตาร์ตบริการ</p>
+  </section>
+</section>
+
+<section>
+  <h2><span class="n">8</span>ปรับให้ตรงกับการบันทึกของโรงพยาบาล</h2>
+  <p>แต่ละโรงพยาบาลตั้งค่า HOSxP ต่างกัน ตรวจ 3 เรื่องนี้หลังติดตั้ง</p>
+  <h3>8.1 คอลัมน์ "เริ่มตรวจ" ใน service_time</h3>
+<pre>SELECT service4_dep, service5_dep, service11_dep, service12_dep, COUNT(*)
+FROM service_time s JOIN er_regist e ON e.vn = s.vn
+WHERE e.vstdate &gt;= CURDATE() - INTERVAL 7 DAY
+GROUP BY 1,2,3,4 ORDER BY 5 DESC LIMIT 5;</pre>
+  <p>คอลัมน์ที่ <code>_dep</code> เป็นรหัสแผนก ER และเวลาอยู่หลังเวลาเข้า ER คือคอลัมน์ที่ใช้ → ตั้ง <code>ER_ST_DOCTOR_COL</code></p>
+  <h3>8.2 รหัสแผนก ER</h3>
+<pre>SELECT depcode, department FROM kskdepartment;</pre>
+  <h3>8.3 เวลาพบแพทย์</h3>
+  <p>หลายโรงพยาบาลกดปุ่ม "เริ่มตรวจ" ตอนเปิดชาร์ตลงบันทึก ซึ่งช้ากว่าการตรวจจริง แดชบอร์ดจึงใช้
+    <b>เวลาที่เร็วที่สุด</b>ของ กดเริ่มตรวจ / สั่ง Lab / สั่ง X-ray / สั่งยา และแสดง % ความครอบคลุมคู่กันเสมอ
+    ประเด็นนี้ขึ้นเป็น "ข้อสังเกตด้านการบันทึก" ใน Alert ไม่ใช่เรื่องเร่งด่วน</p>
+  <div class="box info"><b>เวร</b> แบ่งตามเวลาเข้า ER — 00:00–08:00 ดึก · 08:01–16:00 เช้า · 16:01–23:59 บ่าย</div>
+
+  <section class="cont">
+    <h2><span class="n">9</span>เปิดผ่านโดเมนของโรงพยาบาล</h2>
+    <p>วางใต้ sub-path เช่น <code>https://&lt;โดเมน&gt;/erdash/</code> (Apache) — ใส่<b>ก่อน</b>บรรทัด catch-all <code>ProxyPass /</code>:</p>
+<pre>ProxyPass /erdash/ http://127.0.0.1:6200/
+ProxyPassReverse /erdash/ http://127.0.0.1:6200/
+&lt;Location /erdash/&gt;
+  RequestHeader set X-Forwarded-Prefix /erdash
+  RequestHeader set X-Forwarded-Proto https
+&lt;/Location&gt;</pre>
+    <div class="box warn"><b>แก้ค่าตั้ง Apache ทุกครั้ง</b> — สำรองไฟล์ → <code>httpd -t</code> → ผ่านค่อย
+      <code>systemctl reload httpd</code> ไม่ผ่านให้คืนไฟล์สำรองทันที (เว็บอื่นบน vhost เดียวกันจะพังพร้อมกัน)</div>
+  </section>
+</section>
+
+<section>
+  <h2><span class="n">10</span>ตรวจสอบหลังติดตั้ง</h2>
+  <ul class="check">
+    <li><code>/healthz</code> ตอบ <code>{"status":"ok"}</code></li>
+    <li>จำนวนผู้มา ER ตรงกับรายงาน ER ของ HOSxP ในช่วงเดียวกัน</li>
+    <li>บล็อก 11 "มีเวลาพบแพทย์" ไม่ต่ำผิดปกติ (ถ้าต่ำ ตรวจหัวข้อ 8.1)</li>
+    <li>บล็อก 11 "ลงระดับ Triage" ใกล้ 100%</li>
+    <li>ปุ่ม ⬇ JPG ได้ไฟล์ภายใน ~15 วินาที</li>
+    <li>เปิดจากมือถือได้ ไม่ต้องเลื่อนข้าง</li>
+  </ul>
+
+  <section class="cont">
+    <h2><span class="n">11</span>ความปลอดภัย</h2>
+    <ul>
+      <li>แสดงเฉพาะตัวเลขรวม ไม่มี HN / ชื่อผู้ป่วย · ไม่แสดงจำนวนผู้เสียชีวิต</li>
+      <li>พารามิเตอร์และค่าตั้งทุกตัวที่ต่อเข้า SQL ถูกตรวจรูปแบบก่อน · session ฐานข้อมูลเป็น READ ONLY</li>
+      <li>แอปไม่มีระบบล็อกอิน — ถ้าเปิดออกอินเทอร์เน็ต ตั้ง HTTPS, rate limit, firewall ที่ proxy
+        และพิจารณาจำกัดผู้เข้าถึง (รายละเอียดใน <code>SECURITY.md</code>)</li>
+    </ul>
+  </section>
+
+  <section class="cont">
+    <h2><span class="n">12</span>อัปเดตและแก้ปัญหา</h2>
+    <p><b>อัปเดต</b> — แตก zip ใหม่ทับโฟลเดอร์เดิม (<code>.env</code> และรูปของโรงพยาบาลไม่ถูกทับ) แล้ว
+      <code>systemctl restart er-dashboard</code></p>
+    <table>
+      <tr><th style="width:36%">อาการ</th><th>วิธีแก้</th></tr>
+      <tr><td>หน้าเว็บขึ้น 500</td><td><code>journalctl -u er-dashboard -n 50</code> — มักเป็นรหัสฐานข้อมูลผิด / ต่อ DB ไม่ได้</td></tr>
+      <tr><td>ตัวอักษรไทยเพี้ยน</td><td>ฐานข้อมูลต้องเป็น tis-620 ตามมาตรฐาน HOSxP (แอปตั้ง charset ให้แล้ว)</td></tr>
+      <tr><td>เลือกช่วง 1 ปีช้า</td><td>ปกติ ~30 วินาที (ค้น Lab/X-ray/ยาเพิ่ม) · ครั้งถัดไปเร็วเพราะแคช</td></tr>
+      <tr><td>ลิงก์ผิดเมื่ออยู่หลัง proxy</td><td>ตรวจ <code>RequestHeader set X-Forwarded-Prefix</code></td></tr>
+      <tr><td>แก้ CSS แล้วผู้ใช้ยังเห็นแบบเก่า</td><td>เปลี่ยน <code>VERSION</code> ใน <code>app.py</code> (ใช้กันแคชของ Cloudflare)</td></tr>
+    </table>
+  </section>
+</section>
+
+<section>
+  <h2><span class="n">13</span>นิยามตัวชี้วัด</h2>
+  <table>
+    <tr><th style="width:30%">ตัวชี้วัด</th><th>นิยาม / แหล่งข้อมูล</th></tr>
+    <tr><td>ผู้มา ER</td><td><code>er_regist</code> ที่มี <code>enter_er_time</code> ในช่วงวันที่ (<code>vstdate</code>)</td></tr>
+    <tr><td>ระดับความเร่งด่วน</td><td><code>er_emergency_level_id</code> ถ้าว่างใช้ <code>er_emergency_type.export_code</code></td></tr>
+    <tr><td>Trauma / จราจร</td><td>มีรหัส ICD-10 กลุ่ม S/T · จราจร = กลุ่ม V</td></tr>
+    <tr><td>รับบริการ</td><td><code>er_pt_type</code> = 4 (ทำแผล ฉีดยา ฯลฯ)</td></tr>
+    <tr><td>เวลาพบแพทย์</td><td>เร็วที่สุดของ กดเริ่มตรวจ / สั่ง Lab / X-ray / ยา ภายใน 0–240 นาทีหลังเข้า ER</td></tr>
+    <tr><td>กลับมา ER ซ้ำ ≤ 48 ชม.</td><td>มี ER visit ก่อนหน้าของ HN เดียวกันภายใน 48 ชม. ไม่นับรับบริการทั้งสองครั้ง</td></tr>
+    <tr><td>เวลาใน ER</td><td>เข้า ER → ลงทะเบียน Admit (<code>ipt</code>) / เวลาส่งต่อแรก (<code>referout</code>)</td></tr>
+    <tr><td>ส่งมาจาก OPD</td><td><code>ovst.main_dep</code> ไม่ใช่ <code>ER_DEPCODE</code> และไม่อยู่ใน <code>ER_NOT_DEPCODES</code></td></tr>
+    <tr><td>สีแดงเกิน 60 นาที</td><td>ระดับ 1 ที่ Admit/Refer และเวลาใน ER เกิน <code>ER_RED_MAX_MIN</code></td></tr>
+    <tr><td>อุบัติเหตุหมู่</td><td>ผู้บาดเจ็บสาเหตุกลุ่มเดียวกัน (ICD-10 V–Y: จราจร สัตว์/แมลง ทำร้าย สารพิษ ไฟ พลัดตก)
+      ≥ <code>ER_MCI_MIN</code> รายภายใน <code>ER_MCI_WINDOW</code> นาที แบบหน้าต่างเลื่อน — เป็นการคัดกรองอัตโนมัติ
+      หัวหน้า ER ควรยืนยัน</td></tr>
+    <tr><td>สาเหตุการบาดเจ็บ</td><td>รหัส V01–Y98 จัดกลุ่ม 3 หลัก ไม่นับมารับบริการต่อเนื่อง (โรคหลักเป็นรหัส Z)</td></tr>
+  </table>
+
+  <section class="cont">
+    <h2><span class="n">14</span>ติดต่อและใบอนุญาต</h2>
+    <p>พัฒนาโดย <b>นายเผด็จชัย สิงหล</b> โรงพยาบาลวังน้ำเขียว จ.นครราชสีมา ·
+      แจ้งปัญหา/ขอฟีเจอร์: <code>github.com/nopneo/er-dashboard-wnk/issues</code>
+      (พบช่องโหว่ใช้ Security → Report a vulnerability) · อย่าแนบข้อมูลผู้ป่วยจริงในรายงานปัญหา</p>
+    <p>ใบอนุญาต MIT — ใช้ แก้ไข แจกจ่ายได้ฟรี โดยคงข้อความลิขสิทธิ์ไว้ · ฟอนต์ Kanit / Sarabun ใช้ SIL Open Font License 1.1 ·
+      HOSxP เป็นเครื่องหมายของ บริษัท บางกอกเมดิคอลซอฟต์แวร์ จำกัด</p>
+  </section>
+</section>
+
+</body>
+</html>
