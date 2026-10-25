@@ -20,6 +20,7 @@ except ImportError:                   # Windows
 from flask import Flask, jsonify, render_template, request, send_file, url_for
 
 import db
+import nurse_report
 import queries
 import render
 from cache import TTLCache
@@ -106,19 +107,25 @@ def _parse_date(v):
         return None
 
 
-def _params():
-    """(d1, d2, shift) ที่ผ่านการตรวจแล้ว — ค่าเหล่านี้ถูกต่อเข้า SQL จึงรับเฉพาะรูปแบบที่รู้จัก"""
+def _range(max_days, default_d1):
+    """(d1, d2) ที่ผ่านการตรวจแล้ว — ถูกต่อเข้า SQL จึงรับเฉพาะวันที่ที่ parse ได้"""
     today = date.today()
-    d1 = _parse_date(request.args.get("d1")) or today.replace(day=1)
+    d1 = _parse_date(request.args.get("d1")) or default_d1
     d2 = _parse_date(request.args.get("d2")) or today
     d2 = min(d2, today)
     d1 = min(d1, d2)
-    if (d2 - d1).days >= MAX_DAYS:
-        d1 = d2 - timedelta(days=MAX_DAYS - 1)
+    if (d2 - d1).days >= max_days:
+        d1 = d2 - timedelta(days=max_days - 1)
+    return d1.isoformat(), d2.isoformat()
+
+
+def _params():
+    """(d1, d2, shift) ที่ผ่านการตรวจแล้ว — ค่าเหล่านี้ถูกต่อเข้า SQL จึงรับเฉพาะรูปแบบที่รู้จัก"""
+    d1, d2 = _range(MAX_DAYS, date.today().replace(day=1))
     shift = request.args.get("shift") or "all"
     if shift not in queries.SHIFTS:
         shift = "all"
-    return d1.isoformat(), d2.isoformat(), shift
+    return d1, d2, shift
 
 
 @app.route("/")
@@ -132,6 +139,48 @@ def dashboard():
 def api_data():
     d1, d2, shift = _params()
     return jsonify(queries.build(d1, d2, shift))
+
+
+def _fy_start(today=None):
+    today = today or date.today()
+    return date(today.year - (0 if today.month >= 10 else 1), 10, 1)
+
+
+def _nurse_params():
+    """ค่าเริ่มต้น = ตั้งแต่ต้นปีงบประมาณที่แล้ว (เห็นปีเต็ม 1 ปี + ปีปัจจุบัน)"""
+    fy = _fy_start()
+    return _range(nurse_report.MAX_DAYS, fy.replace(year=fy.year - 1))
+
+
+def _nurse_presets():
+    today, fy = date.today(), _fy_start()
+    prev = fy.replace(year=fy.year - 1)
+    last_m = today.replace(day=1) - timedelta(days=1)
+    be = lambda d: d.year + 543 + 1
+    out = [
+        ("ปีงบ " + str(be(fy)), fy, today),
+        ("ปีงบ " + str(be(prev)), prev, fy - timedelta(days=1)),
+        ("2 ปีงบล่าสุด", prev, today),
+        # ถอย 330 วันจากวันที่ 1 ของเดือนล่าสุด ตกในเดือนที่ 11 ก่อนหน้าเสมอ
+        ("12 เดือนที่ครบ", (last_m.replace(day=1) - timedelta(days=330)).replace(day=1), last_m),
+        ("3 ปีงบ", prev.replace(year=prev.year - 1), today),
+    ]
+    return [{"label": l, "d1": a.isoformat(), "d2": b.isoformat()} for l, a, b in out]
+
+
+@app.route("/nurse")
+def nurse():
+    d1, d2 = _nurse_params()
+    return render_template("nurse.html", d=nurse_report.build(d1, d2), presets=_nurse_presets(),
+                           print_mode=request.args.get("print") == "1")
+
+
+@app.route("/nurse.xlsx")
+def nurse_xlsx():
+    d1, d2 = _nurse_params()
+    blob = nurse_report.to_xlsx(nurse_report.build(d1, d2), hospital_name())
+    return send_file(BytesIO(blob), as_attachment=True, download_name=f"er_nurse_{d1}_{d2}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 class _RenderLock:
@@ -189,11 +238,16 @@ def export(fmt):
     if fmt not in MIME or not EXPORT_ENABLED:
         return {"error": "รองรับเฉพาะ png, jpg, pdf" if EXPORT_ENABLED else "ปิดการส่งออกไฟล์"}, 404
 
-    d1, d2, shift = _params()
-    qs = urllib.parse.urlencode({"d1": d1, "d2": d2, "shift": shift, "print": "1"})
-    url = f"http://127.0.0.1:{os.getenv('PORT', '6200')}/?{qs}"
-
-    name = f"er_{d1}_{d2}{'' if shift == 'all' else '_' + shift}.{fmt}"
+    if request.args.get("page") == "nurse":       # รายงานพยาบาลตรวจแทนแพทย์
+        d1, d2 = _nurse_params()
+        qs = urllib.parse.urlencode({"d1": d1, "d2": d2, "print": "1"})
+        url = f"http://127.0.0.1:{os.getenv('PORT', '6200')}/nurse?{qs}"
+        name = f"er_nurse_{d1}_{d2}.{fmt}"
+    else:
+        d1, d2, shift = _params()
+        qs = urllib.parse.urlencode({"d1": d1, "d2": d2, "shift": shift, "print": "1"})
+        url = f"http://127.0.0.1:{os.getenv('PORT', '6200')}/?{qs}"
+        name = f"er_{d1}_{d2}{'' if shift == 'all' else '_' + shift}.{fmt}"
     blob = _export_cache.get(name, EXPORT_CACHE_TTL)
     if blob is not None:
         return send_file(BytesIO(blob), mimetype=MIME[fmt], as_attachment=True, download_name=name)

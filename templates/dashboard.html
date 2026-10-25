@@ -71,6 +71,7 @@
   <a class="dl" href="{{ url_for('export', fmt='pdf') }}{{ q }}">⬇ PDF</a>
   <span class="hint">ส่งออกใช้เวลา ~10 วินาที</span>
   {% endif %}
+  <a class="dl" href="{{ url_for('nurse') }}">🩺 พยาบาลตรวจแทนแพทย์</a>
   <span class="asof">ข้อมูล ณ {{ d.generated_at }}</span>
 </form>
 

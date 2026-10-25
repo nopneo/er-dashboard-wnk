@@ -4,3 +4,4 @@ python-dotenv>=1.0
 Pillow>=10.0
 gunicorn>=21.2; sys_platform != "win32"
 waitress>=3.0; sys_platform == "win32"
+openpyxl>=3.1
