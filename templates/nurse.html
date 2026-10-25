@@ -73,6 +73,7 @@
   <a class="dl" href="{{ url_for('export', fmt='jpg') }}{{ q }}&page=nurse">⬇ JPG</a>
   <a class="dl" href="{{ url_for('export', fmt='pdf') }}{{ q }}&page=nurse">⬇ PDF</a>
   {% endif %}
+  {% if locked %}<a class="dl" href="{{ url_for('nurse_logout') }}">🔒 ออกจากระบบ</a>{% endif %}
   <span class="asof">ข้อมูล ณ {{ d.generated_at }}</span>
 </form>
 

@@ -4,7 +4,10 @@
 production:  gunicorn -b 0.0.0.0:6200 app:app   (ออกผ่าน sub-path เช่น /erdash/)
 """
 
+import functools
+import hashlib
 import os
+import secrets
 import tempfile
 import threading
 import time
@@ -17,7 +20,9 @@ try:
 except ImportError:                   # Windows
     fcntl = None
 
-from flask import Flask, jsonify, render_template, request, send_file, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
+from itsdangerous import BadSignature, URLSafeTimedSerializer
+from werkzeug.security import check_password_hash
 
 import db
 import nurse_report
@@ -93,6 +98,10 @@ def _branding():
 def _security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
+    # cookie ผ่าน https (หลัง proxy) ให้ Secure — เข้าตรง http://<ip>:6200 บน LAN ยังใช้ได้
+    if request.is_secure:
+        resp.headers.setlist("Set-Cookie", [c if "; Secure" in c else c + "; Secure"
+                                            for c in resp.headers.getlist("Set-Cookie")])
     return resp
 
 
@@ -152,6 +161,80 @@ def _nurse_params():
     return _range(nurse_report.MAX_DAYS, fy.replace(year=fy.year - 1))
 
 
+# ---- รหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ (มีชื่อพยาบาลรายคน) — ไม่ตั้ง ER_NP_PASS_HASH = เปิดดูได้เลย
+# เก็บเฉพาะ hash: python -c "from werkzeug.security import generate_password_hash as g; print(g(input(), method='pbkdf2:sha256'))"
+NP_PASS_HASH = os.getenv("ER_NP_PASS_HASH", "").strip()
+#: เปลี่ยนรหัส = tag เปลี่ยน → session เดิมใช้ไม่ได้ทันที
+_NP_TAG = hashlib.sha256(NP_PASS_HASH.encode()).hexdigest()[:16]
+NP_LOGIN_HOURS = int(os.getenv("ER_NP_LOGIN_HOURS", "12"))
+NP_MAX_FAIL = 10
+NP_FAIL_WINDOW = 900
+_np_fail = TTLCache(maxsize=512)
+
+# gunicorn หลาย worker ต้องใช้ key เดียวกัน — ไม่ตั้ง ER_SECRET_KEY ก็ derive จาก hash ของรหัส
+app.secret_key = (os.getenv("ER_SECRET_KEY")
+                  or (hashlib.sha256(("erdash-session:" + NP_PASS_HASH).encode()).hexdigest() if NP_PASS_HASH
+                      else secrets.token_hex(32)))
+app.config.update(SESSION_COOKIE_NAME="erdash_session",   # ไม่ชนกับ cookie "session" ของแอปอื่นในโดเมนเดียวกัน
+                  SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
+                  PERMANENT_SESSION_LIFETIME=timedelta(hours=NP_LOGIN_HOURS))
+_np_token = URLSafeTimedSerializer(app.secret_key, salt="nurse-export")
+
+
+def _np_ok():
+    """ผ่านรหัสแล้ว หรือเป็น chromium ของปุ่มส่งออกที่ถือ token อายุสั้น"""
+    if not NP_PASS_HASH or session.get("np") == _NP_TAG:
+        return True
+    try:
+        return _np_token.loads(request.args.get("t", ""), max_age=120) == _NP_TAG
+    except BadSignature:
+        return False
+
+
+def _client_ip():
+    xff = request.headers.get("X-Forwarded-For", "")
+    return request.headers.get("CF-Connecting-IP") or (xff.split(",")[-1].strip() if xff else request.remote_addr)
+
+
+def nurse_required(view):
+    @functools.wraps(view)
+    def wrapped(*a, **kw):
+        if not _np_ok():
+            return redirect(url_for("nurse_login", d1=request.args.get("d1"), d2=request.args.get("d2")))
+        return view(*a, **kw)
+    return wrapped
+
+
+@app.route("/nurse/login", methods=["GET", "POST"])
+def nurse_login():
+    if not NP_PASS_HASH:
+        return redirect(url_for("nurse"))
+    src = request.form if request.method == "POST" else request.args
+    back = {k: v.isoformat() for k in ("d1", "d2") if (v := _parse_date(src.get(k)))}
+    error = None
+    if request.method == "POST":
+        ip = _client_ip()
+        fails = _np_fail.get(ip, NP_FAIL_WINDOW) or 0
+        if fails >= NP_MAX_FAIL:
+            error = "ใส่รหัสผิดหลายครั้ง กรุณารอ 15 นาทีแล้วลองใหม่"
+        elif check_password_hash(NP_PASS_HASH, request.form.get("passcode", "").strip()):
+            session.clear()
+            session.permanent = True
+            session["np"] = _NP_TAG
+            return redirect(url_for("nurse", **back))
+        else:
+            _np_fail.set(ip, fails + 1)
+            time.sleep(1)                      # ชะลอการเดารหัส
+            error = "รหัสไม่ถูกต้อง"
+    return render_template("nurse_login.html", error=error, back=back), (401 if error else 200)
+
+
+@app.route("/nurse/logout")
+def nurse_logout():
+    session.pop("np", None)
+    return redirect(url_for("dashboard"))
+
+
 def _nurse_presets():
     today, fy = date.today(), _fy_start()
     prev = fy.replace(year=fy.year - 1)
@@ -169,13 +252,15 @@ def _nurse_presets():
 
 
 @app.route("/nurse")
+@nurse_required
 def nurse():
     d1, d2 = _nurse_params()
     return render_template("nurse.html", d=nurse_report.build(d1, d2), presets=_nurse_presets(),
-                           print_mode=request.args.get("print") == "1")
+                           print_mode=request.args.get("print") == "1", locked=bool(NP_PASS_HASH))
 
 
 @app.route("/nurse.xlsx")
+@nurse_required
 def nurse_xlsx():
     d1, d2 = _nurse_params()
     blob = nurse_report.to_xlsx(nurse_report.build(d1, d2), hospital_name())
@@ -239,8 +324,10 @@ def export(fmt):
         return {"error": "รองรับเฉพาะ png, jpg, pdf" if EXPORT_ENABLED else "ปิดการส่งออกไฟล์"}, 404
 
     if request.args.get("page") == "nurse":       # รายงานพยาบาลตรวจแทนแพทย์
+        if not _np_ok():
+            return redirect(url_for("nurse_login", d1=request.args.get("d1"), d2=request.args.get("d2")))
         d1, d2 = _nurse_params()
-        qs = urllib.parse.urlencode({"d1": d1, "d2": d2, "print": "1"})
+        qs = urllib.parse.urlencode({"d1": d1, "d2": d2, "print": "1", "t": _np_token.dumps(_NP_TAG)})
         url = f"http://127.0.0.1:{os.getenv('PORT', '6200')}/nurse?{qs}"
         name = f"er_nurse_{d1}_{d2}.{fmt}"
     else:

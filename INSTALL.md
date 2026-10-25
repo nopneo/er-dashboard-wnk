@@ -86,6 +86,9 @@ copy .env.example .env ; notepad .env
 | `ER_MAX_DAYS` | ช่วงวันที่ยาวสุดที่ดึงได้ต่อครั้ง (ค่าเริ่มต้น 366) |
 | `ER_NP_START` / `ER_NP_END` | ช่วงเวลาของรายงานพยาบาลตรวจแทนแพทย์ (ค่าเริ่มต้น 16:00 / 20:00) |
 | `ER_NURSE_PROVIDER_TYPES` | `doctor.provider_type_code` ที่นับเป็นพยาบาล คั่นด้วยจุลภาค (ค่าเริ่มต้น 03) |
+| `ER_NP_PASS_HASH` | hash (pbkdf2) ของรหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ — ไม่ตั้ง = เปิดดูได้ไม่ต้องใส่รหัส · สร้างด้วย `python -c "from werkzeug.security import generate_password_hash as g; print(g(input(), method='pbkdf2:sha256'))"` แล้วใส่ใน `.env` ครอบด้วย `'...'` |
+| `ER_SECRET_KEY` | key สำหรับ cookie เข้าระบบ (สุ่มยาว ๆ เช่น `python -c "import secrets; print(secrets.token_hex(32))"`) — ไม่ตั้งจะสร้างจาก `ER_NP_PASS_HASH` |
+| `ER_NP_LOGIN_HOURS` | อยู่ในระบบได้นานกี่ชั่วโมงหลังใส่รหัส (ค่าเริ่มต้น 12) |
 | `ER_NP_MAX_DAYS` | ช่วงวันที่ยาวสุดของรายงานพยาบาลตรวจแทนแพทย์ (ค่าเริ่มต้น 1827 = 5 ปี) |
 | `ER_CACHE_TTL` | อายุแคชข้อมูลเป็นวินาที (ค่าเริ่มต้น 120, 0 = ปิด) |
 | `ER_DB_TIMEOUT` | เวลาสูงสุดต่อคำสั่ง SQL เป็นวินาที (ค่าเริ่มต้น 60) |
