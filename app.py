@@ -5,6 +5,7 @@ production:  gunicorn -b 0.0.0.0:6200 app:app   (ออกผ่าน sub-path 
 """
 
 import os
+import re
 import tempfile
 import threading
 import time
@@ -25,6 +26,9 @@ import render
 from cache import TTLCache
 
 
+_PREFIX_RE = re.compile(r"(/[A-Za-z0-9._~-]+)+/?")
+
+
 class PrefixMiddleware:
     """อ่าน X-Forwarded-Prefix → SCRIPT_NAME และ X-Forwarded-Proto → url_scheme (sub-path หลัง proxy)"""
 
@@ -33,13 +37,14 @@ class PrefixMiddleware:
 
     def __call__(self, environ, start_response):
         prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "")
-        if prefix:
+        # รับเฉพาะ path ภายใน เช่น /erdash — กันคนส่ง header ปลอม (//evil.example) ให้ลิงก์ชี้ออกนอกเว็บ
+        if prefix and _PREFIX_RE.fullmatch(prefix):
             environ["SCRIPT_NAME"] = prefix.rstrip("/")
             path = environ.get("PATH_INFO", "")
             if path.startswith(prefix):
                 environ["PATH_INFO"] = path[len(prefix):] or "/"
         proto = environ.get("HTTP_X_FORWARDED_PROTO")
-        if proto:
+        if proto in ("http", "https"):
             environ["wsgi.url_scheme"] = proto
         return self.wsgi_app(environ, start_response)
 
@@ -88,10 +93,18 @@ def _branding():
     }
 
 
+#: ทุกอย่างโหลดจากเว็บตัวเองเท่านั้น (ไม่มี CDN) · inline ใช้กับ style/สคริปต์ปุ่มส่งออกในหน้า
+CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+       "script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; "
+       "form-action 'self'; frame-ancestors 'self'")
+
+
 @app.after_request
 def _security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Content-Security-Policy", CSP)
     return resp
 
 
@@ -237,6 +250,11 @@ def manifest():
     })
     resp.mimetype = "application/manifest+json"
     return resp
+
+
+@app.errorhandler(queries.Busy)
+def _busy(_e):
+    return ({"error": "ระบบกำลังประมวลผลคำขออื่นอยู่ ลองใหม่ในอีกครู่"}, 503, {"Retry-After": "30"})
 
 
 @app.route("/healthz")

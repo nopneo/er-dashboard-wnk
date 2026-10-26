@@ -154,7 +154,7 @@ body {
 
 /* ------------------------------------------------------------ 1. KPI */
 
-.kpis { display: grid; grid-template-columns: repeat(7, 1fr); gap: 11px; }
+.kpis { display: grid; grid-template-columns: 1fr 1fr 1.45fr repeat(5, 1fr); gap: 11px; }
 .kpi {
   border-radius: 22px; padding: 13px 14px 12px; color: #fff; position: relative;
   overflow: hidden; box-shadow: 0 10px 22px rgba(170,50,50,.20);
@@ -399,7 +399,7 @@ table.t.alerts .wm { display: none; }
 
   .kpis { grid-template-columns: repeat(2, 1fr); gap: 9px; }
   .kpi .v { font-size: 32px; }
-  .kpi.occ { grid-column: 1 / -1; }
+  .kpi.occ, .kpi.eve { grid-column: 1 / -1; }
 
   .profile { grid-template-columns: 1fr; }
   .hourly .b .n { font-size: 0; }
@@ -442,6 +442,7 @@ table.t.alerts .wm { display: none; }
   .row.c3b > :nth-child(3) .ttd { grid-template-columns: 1fr 1fr; }
   .kpis { grid-template-columns: repeat(4, 1fr); }
   .kpi.occ { grid-column: span 2; justify-content: center; gap: 22px; }
+  .kpi.eve { grid-column: 1 / -1; }
   .kpi.occ svg { width: 108px; height: 108px; }
   .kpi.occ .side { font-size: 14.5px; }
   .kpi.occ .side .h { font-size: 18px; margin-bottom: 4px; }

@@ -1,6 +1,7 @@
-Flask>=3.0
-PyMySQL>=1.1
-python-dotenv>=1.0
-Pillow>=10.0
-gunicorn>=21.2; sys_platform != "win32"
-waitress>=3.0; sys_platform == "win32"
+# ขั้นต่ำ = รุ่นที่แก้ช่องโหว่ที่รู้จักแล้ว · ขั้นสูง = ไม่ข้ามรุ่นใหญ่โดยไม่ได้ทดสอบ
+Flask>=3.1.1,<4
+PyMySQL>=1.1.1,<2
+python-dotenv>=1.0,<2
+Pillow>=10.3,<14
+gunicorn>=23.0,<27; sys_platform != "win32"
+waitress>=3.0.1,<4; sys_platform == "win32"
