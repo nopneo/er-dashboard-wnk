@@ -77,12 +77,59 @@ _SOURCES = [
 D2D = "nullif(least(" + ", ".join(f"ifnull({s}, 99999)" for s in _SOURCES) + "), 99999)"
 FROM_ST = FROM + "left join service_time s on s.vn = e.vn "
 
-#: กลับมา ER ซ้ำภายใน 48 ชม. (ไม่นับมารับบริการตามนัด เช่น ทำแผล ฉีดยา ทั้งครั้งก่อนและครั้งนี้)
+#: ลงทะเบียนเข้า ER แต่ ER ไม่ได้คัดกรอง (ไม่มีระดับความเร่งด่วนหรือประเภทผู้ป่วย) = ส่งมาผิด ไม่นับทุกบล็อก
+#: (รพ.วังน้ำเขียว ~30 ราย/เดือน เกือบทั้งหมดไม่มีผลการจำหน่ายจาก ER)
+SCREENED = "e.er_emergency_level_id is not null and e.er_pt_type is not null"
+
+
+def _no_z(alias):
+    return (f"not exists(select 1 from ovstdiag z where z.vn = {alias}.vn and z.diagtype = '1' "
+            f"and z.icd10 like 'Z%')")
+
+
+#: visit ที่นับในอัตรากลับมาซ้ำ — ไม่นับรับบริการ (er_pt_type 4), มาตามนัด (ovstist 02) และโรคหลักรหัส Z
+#: (ทำแผล ตัดไหม ฉีดยา วัคซีน ติดตามอาการ) ทั้งครั้งนี้และครั้งก่อน
+ELIG = f"(not {SVC} and ifnull(o.ovstist, '') <> '02' and {_no_z('e')})"
+#: กลับมา ER ซ้ำภายใน 48 ชม. หลัง ER visit ก่อนหน้าที่เข้าเกณฑ์เดียวกัน
 REVISIT = ("exists(select 1 from ovst po join er_regist p on p.vn = po.vn "
            "where po.hn = o.hn and p.vn <> e.vn and ifnull(p.er_pt_type, 0) <> 4 "
+           "and p.er_emergency_level_id is not null and ifnull(po.ovstist, '') <> '02' "
+           f"and {_no_z('p')} "
            "and po.vstdate between e.vstdate - interval 2 day and e.vstdate "
            "and p.enter_er_time < e.enter_er_time "
            "and p.enter_er_time >= e.enter_er_time - interval 48 hour)")
+
+
+def _th(text):
+    """ข้อความไทยใน SQL เป็น hex แบบ tis-620 — ส่งตรงเป็น UTF-8 แล้วเพี้ยน (โหมด ssh) ฐาน HOSxP เก็บเป็น tis-620"""
+    return f"convert(X'{text.encode('tis-620').hex()}' using tis620)"
+
+
+# ---- เวลาพบแพทย์จากบันทึกพยาบาลใน HPI (opdscreen.hpi) เช่น "รายงานแพทย์ at 09.15", "10.30 น. แพทย์ ..."
+# ไม่ใช้ "dr" ภาษาอังกฤษ — ตรงกับ drip / drink / Dressing
+_HPI_KW = r"(?:รายงานแพทย์|แจ้งแพทย์|พบแพทย์|ตามแพทย์|แพทย์|[Cc]onsult)"
+_HPI_T = r"(?:[01]?\d|2[0-3])\s*[.:]\s*[0-5]\d"
+_HPI_RE = re.compile(
+    _HPI_KW + r"[^0-9]{0,30}?" + _HPI_T                                  # รายงานแพทย์ at 09.15
+    + r"|" + _HPI_T + r"(?:\s*[,/]\s*" + _HPI_T + r")*\s*(?:น\.?)?[^0-9]{0,20}?" + _HPI_KW)   # 13.46, 14.00 น. รายงานแพทย์
+_HPI_TIME = re.compile(r"([01]?\d|2[0-3])\s*[.:]\s*([0-5]\d)")
+_HPI_LIKE = f"(sc.hpi like concat('%', {_th('แพทย์')}, '%') or sc.hpi like '%onsult%')"
+
+
+def hpi_minutes(enter, hpi):
+    """นาทีจากเข้า ER ถึงเวลาแรกที่พยาบาลจดว่ารายงาน/พบแพทย์ใน HPI (0–D2D_MAX) ไม่พบ = None"""
+    if not hpi:
+        return None
+    best = None
+    for m in _HPI_RE.finditer(hpi):
+        for hh, mm in _HPI_TIME.findall(m.group(0)):
+            t = enter.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0)
+            d = int((t - enter).total_seconds() / 60)          # ตัดเศษแบบ timestampdiff
+            if d < -60:                                        # จดเวลาหลังเที่ยงคืน
+                d += 1440
+            if 0 <= d <= D2D_MAX and (best is None or d < best):
+                best = d
+    return best
 
 #: เป้าหมายเวลาพบแพทย์ (นาที) ตามระดับความเร่งด่วน
 D2D_TARGET = {1: 5, 2: 10, 3: 30, 4: 60, 5: 120}
@@ -94,9 +141,10 @@ LEVEL_COLOR = {1: "#b91c1c", 2: "#ef4444", 3: "#f59e0b", 4: "#22a06b", 5: "#3b82
 BOARDING_MIN = int(os.getenv("ER_BOARDING_MIN", "120"))
 
 
-def _where(d1, d2, shift):
+def _where(d1, d2, shift, screened=True):
     sc = "" if shift == "all" else f" and ({SHIFT_CASE}) = '{shift}' "
-    return f"where e.vstdate between '{d1}' and '{d2}' and e.enter_er_time is not null {sc}"
+    ok = f" and {SCREENED} " if screened else ""
+    return f"where e.vstdate between '{d1}' and '{d2}' and e.enter_er_time is not null {sc}{ok}"
 
 
 def _pct(part, whole, digits=1):
@@ -121,14 +169,46 @@ def _prev_range(d1, d2):
 
 # ---------------------------------------------------------------- 1. KPI
 
+_vmemo, _vmemo_lock = {}, threading.Lock()
+
+
+def _visits(d1, d2, shift):
+    """รายเคส (ไม่มี HN) สำหรับ KPI + Triage — คำนวณเวลาพบแพทย์ครั้งเดียว รวมเวลาจาก HPI
+    บล็อก 1 และ 3 รันพร้อมกัน จึงล็อกต่อช่วงวันที่ให้ยิงฐานข้อมูลครั้งเดียว"""
+    key = (d1, d2, shift)
+    with _vmemo_lock:
+        ent = _vmemo.setdefault(key, {"lock": threading.Lock(), "t": 0.0, "rows": None})
+        while len(_vmemo) > 16:
+            _vmemo.pop(next(iter(_vmemo)))
+    with ent["lock"]:
+        if ent["rows"] is not None and _time.time() - ent["t"] < 60:
+            return ent["rows"]
+        rows = []
+        for r in fetch(f"""
+            select {LEVEL} lvl, e.er_dch_type dch, {D2D} d2d, {ELIG} elig, ({ELIG} and {REVISIT}) rv,
+              e.enter_er_time t,
+              case when {_HPI_LIKE} then replace(replace(replace(sc.hpi, char(13), ' '), char(10), ' '),
+                                                 char(9), ' ') end hpi
+            {FROM_ST} left join opdscreen sc on sc.vn = e.vn {_where(d1, d2, shift)}"""):
+            d = r["d2d"]
+            d = None if d is None or d == "" else num(d)
+            h = hpi_minutes(_dt(r["t"]), r["hpi"]) if r.get("hpi") else None
+            if h is not None and (d is None or h < d):
+                d = h
+            rows.append({"lvl": int(num(r["lvl"], 5)), "dch": int(num(r["dch"], 0)), "d2d": d,
+                         "elig": bool(num(r["elig"])), "rv": bool(num(r["rv"])), "hpi": h is not None})
+        ent.update(rows=rows, t=_time.time())
+        return rows
+
+
 def _kpi_raw(d1, d2, shift):
-    r = fetch_one(f"""
-        select count(*) n, sum(lvl = 1) l1, sum(lvl = 2) l2,
-          sum(dch = 3) admit, sum(dch = 2) refer,
-          avg(d2d) d2d, sum(d2d is not null) d2d_n, sum(not svc) nsvc, sum(not svc and rv) rv
-        from (select {LEVEL} lvl, e.er_dch_type dch, {D2D} d2d, {SVC} svc, {REVISIT} rv
-              {FROM_ST} {_where(d1, d2, shift)}) t""")
-    return {k: num(v) for k, v in r.items()}
+    v = _visits(d1, d2, shift)
+    d2d = [x["d2d"] for x in v if x["d2d"] is not None]
+    return {"n": len(v), "l1": sum(x["lvl"] == 1 for x in v), "l2": sum(x["lvl"] == 2 for x in v),
+            "admit": sum(x["dch"] == 3 for x in v), "refer": sum(x["dch"] == 2 for x in v),
+            "d2d": sum(d2d) / len(d2d) if d2d else 0, "d2d_n": len(d2d),
+            "d2d_hpi": sum(x["hpi"] for x in v),
+            "nelig": sum(x["elig"] for x in v), "rv": sum(x["elig"] and x["rv"] for x in v)}
 
 
 def kpi_summary(d1, d2, shift):
@@ -137,7 +217,7 @@ def kpi_summary(d1, d2, shift):
     days = _days(d1, d2)
     n = cur["n"]
     l12 = cur["l1"] + cur["l2"]
-    rv_rate, rv_prev = _pct(cur["rv"], cur["nsvc"]), _pct(prev["rv"], prev["nsvc"])
+    rv_rate, rv_prev = _pct(cur["rv"], cur["nelig"]), _pct(prev["rv"], prev["nelig"])
     d2d, d2d_prev = round(cur["d2d"], 1), round(prev["d2d"], 1)
     return {
         "period": {"d1": d1, "d2": d2, "prev_d1": p1, "prev_d2": p2, "days": days},
@@ -147,8 +227,9 @@ def kpi_summary(d1, d2, shift):
         "admit": cur["admit"], "admit_pct": _pct(cur["admit"], n),
         "refer": cur["refer"], "refer_pct": _pct(cur["refer"], n),
         "d2d": d2d, "d2d_delta": _delta(d2d, d2d_prev),
-        "d2d_n": cur["d2d_n"], "d2d_cover": _pct(cur["d2d_n"], n),
+        "d2d_n": cur["d2d_n"], "d2d_cover": _pct(cur["d2d_n"], n), "d2d_hpi": cur["d2d_hpi"],
         "revisit": cur["rv"], "revisit_rate": rv_rate, "revisit_delta": _delta(rv_rate, rv_prev),
+        "revisit_base": cur["nelig"],
     }
 
 
@@ -178,17 +259,15 @@ def visit_trend(d2, shift, months=9):
 # ------------------------------------------- 3. ระดับความเร่งด่วน (Triage)
 
 def triage(d1, d2, shift):
-    rows = fetch(f"""
-        select lvl, count(*) n, avg(d2d) d2d, sum(d2d is not null) d2d_n, sum(dch in (2, 3)) ar
-        from (select {LEVEL} lvl, e.er_dch_type dch, {D2D} d2d
-              {FROM_ST} {_where(d1, d2, shift)}) t group by lvl""")
-    by = {int(num(r["lvl"])): r for r in rows}
-    total = sum(num(r["n"]) for r in rows)
+    v = _visits(d1, d2, shift)
+    total = len(v)
     items = []
     for lv in range(1, 6):
-        r = by.get(lv, {})
-        n, d2d_n = num(r.get("n")), num(r.get("d2d_n"))
-        d2d = round(num(r.get("d2d")), 1) if d2d_n else None
+        g = [x for x in v if x["lvl"] == lv]
+        times = [x["d2d"] for x in g if x["d2d"] is not None]
+        n, d2d_n = len(g), len(times)
+        d2d = round(sum(times) / d2d_n, 1) if d2d_n else None
+        r = {"ar": sum(x["dch"] in (2, 3) for x in g)}
         tgt = D2D_TARGET[lv]
         status = ("flat" if d2d is None else "good" if d2d <= tgt
                   else "watch" if d2d <= tgt * 1.5 else "bad")
@@ -196,9 +275,10 @@ def triage(d1, d2, shift):
                       "value": n, "pct": _pct(n, total), "d2d": d2d, "d2d_cover": _pct(d2d_n, n),
                       "target": D2D_TARGET_LABEL[lv], "status": status,
                       "ar_pct": _pct(num(r.get("ar")), n)})
-    missing = num(fetch_one(f"select sum(e.er_emergency_level_id is null) c "
-                            f"from er_regist e {_where(d1, d2, shift)}").get("c"))
-    return {"total": total, "items": items, "missing": missing, "missing_pct": _pct(missing, total)}
+    # ลงทะเบียน ER แต่ไม่ได้คัดกรอง — ไม่นับในทุกบล็อก แสดงจำนวนไว้ให้รู้ว่าตัดออกไปเท่าไร
+    missing = num(fetch_one(f"select count(*) c from er_regist e {_where(d1, d2, shift, screened=False)} "
+                            f"and not ({SCREENED})").get("c"))
+    return {"total": total, "items": items, "missing": missing, "missing_pct": _pct(missing, total + missing)}
 
 
 # ------------------------------------------------------ 4. Disposition
@@ -601,8 +681,9 @@ def alerts(kpi, tri, ttd, q, load, red=None, mci=None):
         out.append({"level": "mid", "issue": f"ปฏิเสธการรักษา / หนีกลับ {q['ama']} ราย",
                     "where": "ER", "status": "ติดตาม", "action": "ติดตามผู้ป่วย / บันทึกเหตุผล"})
     if tri["missing_pct"] > 5:
-        out.append({"level": "mid", "issue": f"ยังไม่ลงระดับ Triage {tri['missing']} ราย ({tri['missing_pct']}%)",
-                    "where": "บันทึก ER", "status": "เฝ้าระวัง", "action": "ลงระดับความเร่งด่วนทุกราย"})
+        out.append({"level": "info", "issue": f"ลงทะเบียน ER แต่ไม่ได้คัดกรอง {tri['missing']} ราย ({tri['missing_pct']}%) — ไม่นับในรายงาน",
+                    "where": "บันทึก ER", "status": "ข้อสังเกต",
+                    "action": "ส่งผิดแผนกให้ยกเลิก/ย้าย visit · มารักษาจริงให้ลงระดับและประเภท"})
     if kpi["d2d_cover"] < 80:
         out.append({"level": "info", "issue": f"มีเวลาพบแพทย์ {kpi['d2d_cover']}% ของราย",
                     "where": "บันทึก ER", "status": "ข้อสังเกต", "action": "กดเริ่มตรวจใน HOSxP ทุกราย"})

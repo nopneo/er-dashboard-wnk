@@ -23,7 +23,7 @@ from io import BytesIO
 
 from cache import TTLCache
 from db import fetch, num
-from queries import CACHE_TTL, build_slot, DISPOSITION, LEVEL, LEVEL_COLOR, LEVEL_NAME, TH_MONTH, _pct, _thai_date, _thai_datetime
+from queries import CACHE_TTL, SCREENED, build_slot, DISPOSITION, LEVEL, LEVEL_COLOR, LEVEL_NAME, TH_MONTH, _pct, _thai_date, _thai_datetime
 
 
 def _hhmm(name, default):
@@ -112,7 +112,7 @@ def _rows(d1, d2):
                       where x.vn = e.vn and x.diagtype = '1' limit 1), o.doctor) exam
           from er_regist e join ovst o on o.vn = e.vn
             left join er_emergency_type et on et.er_emergency_type = e.er_emergency_type
-          where e.vstdate between '{d1}' and '{d2}' and e.enter_er_time is not null
+          where e.vstdate between '{d1}' and '{d2}' and e.enter_er_time is not null and {SCREENED}
             and time(e.enter_er_time) >= '{START}:00' and time(e.enter_er_time) < '{end}:00'
         ) t left join doctor ex on ex.code = t.exam
         order by t.vstdate, t.tm""")
