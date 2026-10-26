@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>พยาบาลตรวจแทนแพทย์ — {{ hospital }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_v }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icon/favicon-32.png') }}">
+<meta name="theme-color" content="#b91c1c">
+<style>
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+  .presets a { font-family: 'Kanit'; font-size: 13px; color: var(--maroon); background: #fff;
+               border: 1.5px solid var(--rose-b); border-radius: 20px; padding: 3px 11px; text-decoration: none; }
+  .presets a.on { background: var(--red); border-color: var(--red); color: #fff; }
+  .mtrend text { font-family: 'Sarabun'; }
+  table.t.mon td, table.t.mon th { white-space: nowrap; padding-left: 6px; padding-right: 6px; }
+  table.t.mon td { height: 34px; }
+  table.t.mon tr.part td { color: var(--muted); }
+  .pct-bar { display: inline-block; width: 46px; height: 7px; border-radius: 4px; background: var(--rose);
+             vertical-align: middle; margin-left: 6px; overflow: hidden; }
+  .pct-bar i { display: block; height: 100%; background: #db2777; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .def { font-size: 13.5px; line-height: 1.75; color: var(--ink); }
+  .def b { color: var(--maroon); font-family: 'Kanit'; font-weight: 600; }
+  @media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
+  .kpis.k8 { grid-auto-flow: dense; }
+  @media (min-width: 1600px) { .kpis.k8 { grid-template-columns: repeat(3, 1fr) 1.3fr repeat(4, 1fr); } }
+</style>
+</head>
+
+{% macro donut(items, total, unit='ราย', size=104, vsize=9) %}
+{% set r = 15.915 %}
+<svg viewBox="0 0 42 42" width="{{ size }}" height="{{ size }}" style="flex:none">
+  <circle cx="21" cy="21" r="{{ r }}" fill="none" stroke="{{ '#ffe9e9' if unit else 'rgba(255,255,255,.28)' }}" stroke-width="7.4"></circle>
+  {% set ns = namespace(off=25) %}
+  {% for it in items %}{% if it.pct > 0 %}
+  <circle cx="21" cy="21" r="{{ r }}" fill="none" stroke="{{ it.color }}" stroke-width="7.4"
+          stroke-dasharray="{{ it.pct }} {{ 100 - it.pct }}"
+          stroke-dashoffset="{{ ns.off }}" transform="rotate(-90 21 21)"></circle>
+  {% set ns.off = ns.off - it.pct %}
+  {% endif %}{% endfor %}
+  <text x="21" y="{{ 21.4 if unit else 23 }}" text-anchor="middle" font-size="{{ vsize }}"
+        font-family="Kanit" font-weight="700" fill="{{ '#7f1d1d' if unit else '#ffffff' }}">{{ total }}</text>
+  {% if unit %}<text x="21" y="26.6" text-anchor="middle" font-size="4"
+        font-family="Sarabun" fill="#a57c7c">{{ unit }}</text>{% endif %}
+</svg>
+{% endmacro %}
+
+{% macro legend(items) %}
+<div class="legend">
+  {% for it in items %}
+  <div class="li"><span class="dot" style="background:{{ it.color }}"></span>
+    <span class="nm" title="{{ it.label }}">{{ it.label }}</span>
+    <span class="vl">{{ '{:,}'.format(it.value) }}</span>
+    <span class="pc">({{ it.pct }}%)</span></div>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro fmt(v) %}{{ '–' if v is none else ('{:,}'.format(v) if v is integer else v) }}{% endmacro %}
+
+<body class="{{ 'print-mode' if print_mode }}">
+
+{% set q = '?d1=' ~ d.d1 ~ '&d2=' ~ d.d2 %}
+<form class="toolbar" method="get">
+  <a class="dl" href="{{ url_for('dashboard') }}">← ER Dashboard</a>
+  <label>ตั้งแต่ <input type="date" name="d1" value="{{ d.d1 }}"></label>
+  <label>ถึง <input type="date" name="d2" value="{{ d.d2 }}"></label>
+  <button type="submit">ดูข้อมูล</button>
+  <span class="presets">
+    {% for p in presets %}<a href="?d1={{ p.d1 }}&d2={{ p.d2 }}" class="{{ 'on' if p.d1 == d.d1 and p.d2 == d.d2 }}">{{ p.label }}</a>{% endfor %}
+  </span>
+  <a class="dl" href="{{ url_for('nurse_xlsx') }}{{ q }}">⬇ Excel</a>
+  {% if export_enabled %}
+  <a class="dl" href="{{ url_for('export', fmt='jpg') }}{{ q }}&page=nurse">⬇ JPG</a>
+  <a class="dl" href="{{ url_for('export', fmt='pdf') }}{{ q }}&page=nurse">⬇ PDF</a>
+  {% endif %}
+  {% if locked %}<a class="dl" href="{{ url_for('nurse_logout') }}">🔒 ออกจากระบบ</a>{% endif %}
+  <span class="asof">ข้อมูล ณ {{ d.generated_at }}</span>
+</form>
+
+{% set k = d.kpi %}
+{% set win = d.start ~ '–' ~ d.end ~ ' น.' %}
+<div class="sheet">
+
+  <div class="hero">
+    {% if hero_url %}<div class="bg"><img src="{{ hero_url }}" alt=""></div>{% endif %}
+    <div class="logo"><img src="{{ logo_url }}" alt="ตรา{{ hospital }}"></div>
+    <div>
+      <div class="name">{{ hospital }}</div>
+      {% if hospital_en %}<div class="name-en">{{ hospital_en }}</div>{% endif %}
+      <div class="ttl">พยาบาลตรวจแทนแพทย์ <span>· ห้องฉุกเฉิน ช่วง {{ win }} ทุกวัน</span></div>
+      <div class="quote">รายงานภาระงานพยาบาล ER — รายวัน · รายเดือน · รายปีงบประมาณ</div>
+    </div>
+    <div class="meta">
+      <span class="a">{{ d.period_label }}</span>
+      <div class="b">{{ '{:,}'.format(k.days) }} วัน · ข้อมูลจาก HOSxP<br>ณ {{ d.generated_at }}</div>
+    </div>
+  </div>
+
+  <!-- ====================================================== 1. KPI -->
+  <section class="block">
+    <header><span class="no">1</span>
+      <span><span class="t">สรุปภาพรวม</span> <span class="st">ผู้ป่วยที่มา ER ช่วง {{ win }}</span></span>
+      <span class="filters"><span class="chip">📅 {{ d.period_label }}</span><span class="chip">🕓 {{ win }}</span></span>
+    </header>
+    <div class="body">
+      <div class="kpis k8">
+        <div class="kpi g-pink-d"><span class="e">🩺</span>
+          <div class="l">พยาบาลตรวจแทนแพทย์<small>Nurse-examined visits</small></div>
+          <div class="v">{{ '{:,}'.format(k.nurse) }}</div><div class="u">ราย · {{ '{:,}'.format(k.days) }} วัน</div>
+        </div>
+        <div class="kpi g-pink"><span class="e">📆</span>
+          <div class="l">เฉลี่ยต่อวัน<small>per day</small></div>
+          <div class="v">{{ k.per_day }}</div><div class="u">ราย/วัน</div>
+        </div>
+        <div class="kpi g-rose"><span class="e">🗓</span>
+          <div class="l">เฉลี่ยต่อเดือน<small>per month</small></div>
+          <div class="v">{{ fmt(k.per_month) }}</div>
+          <div class="u">{{ 'ราย/เดือน · ' ~ k.full_months ~ ' เดือนที่ครบ' if k.per_month is not none else 'ยังไม่มีเดือนที่ครบ' }}</div>
+        </div>
+        <div class="kpi occ g-red">
+          {{ donut([{'pct': k.pct, 'color': '#ffffff'}], k.pct ~ '%', '', 76, 8.4) }}
+          <div class="side"><span class="h">สัดส่วนพยาบาลตรวจ</span>
+            จากผู้ป่วยช่วงเวลานี้<br>ทั้งหมด {{ '{:,}'.format(k.total) }} ราย</div>
+        </div>
+        <div class="kpi g-blue"><span class="e">👨‍⚕️</span>
+          <div class="l">แพทย์ตรวจ<small>Doctor-examined</small></div>
+          <div class="v">{{ '{:,}'.format(k.doctor) }}</div><div class="u">ราย · {{ (k.doctor * 100 / k.total) | round(1) if k.total else 0 }}%</div>
+        </div>
+        <div class="kpi g-amber"><span class="e">🩹</span>
+          <div class="l">พยาบาลให้บริการ<small>ทำแผล ฉีดยา วัคซีน (ไม่นับเป็นการตรวจ)</small></div>
+          <div class="v">{{ '{:,}'.format(k.svc) }}</div><div class="u">ราย</div>
+        </div>
+        <div class="kpi g-maroon"><span class="e">🚨</span>
+          <div class="l">พยาบาลตรวจ · ระดับ 1-2<small>ควรทบทวนว่าได้ปรึกษาแพทย์</small></div>
+          <div class="v">{{ '{:,}'.format(k.nurse_l12) }}</div><div class="u">ราย · {{ k.nurse_l12_pct }}% · Admit/Refer {{ k.nurse_ar }}</div>
+        </div>
+        <div class="kpi eve g-orange"><span class="e">📊</span>
+          <div class="l">ระดับ 3-5<small>เฉลี่ยต่อวัน · พยาบาล+แพทย์</small></div>
+          <div class="v">{{ k.l345_per_day }}</div><div class="u">ราย/วัน · รวม {{ '{:,}'.format(k.l345) }} ราย</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 2. แนวโน้มรายเดือน | 3. รายปีงบ -->
+  <div class="row c2">
+    <section class="block">
+      <header><span class="no">2</span>
+        <span><span class="t">แนวโน้มรายเดือน</span> <span class="st">ผู้ป่วยช่วง {{ win }} แยกผู้ตรวจ</span></span></header>
+      <div class="body">
+        <div class="sh-key">
+          <span><i style="background:#db2777"></i>พยาบาลตรวจแทนแพทย์</span>
+          <span><i style="background:#3b82f6"></i>แพทย์ตรวจ</span>
+          <span><i style="background:#f59e0b"></i>พยาบาลให้บริการ</span>
+        </div>
+        {% set ms = d.monthly %}
+        {% if ms %}
+        {% set top = ((ms | map(attribute='total') | max) or 1) * 1.08 %}
+        {% set W = 720 %}{% set L = 34 %}{% set H = 170 %}
+        {% set bw = (W - L - 8) / (ms | length) %}
+        {% set step = ((ms | length) / 18) | round(0, 'ceil') | int %}
+        <svg class="mtrend" viewBox="0 0 {{ W }} 220" width="100%">
+          {% for g in range(5) %}
+            {% set y = 18 + g * H / 4 %}
+            <line x1="{{ L }}" y1="{{ y }}" x2="{{ W - 4 }}" y2="{{ y }}" stroke="#f8e3e3"></line>
+            <text x="{{ L - 4 }}" y="{{ y + 3 }}" font-size="9" fill="#c09a9a" text-anchor="end">{{ (top * (4 - g) / 4) | round | int }}</text>
+          {% endfor %}
+          {% for m in ms %}
+            {% set x = L + bw * loop.index0 + bw * 0.14 %}{% set w = bw * 0.72 %}
+            {% set hn = H * m.nurse / top %}{% set hd = H * m.doctor / top %}{% set hs = H * m.svc / top %}
+            {% set base = 18 + H %}
+            <g opacity="{{ 1 if m.full else 0.55 }}">
+              <title>{{ m.label }}{{ '' if m.full else ' (ไม่ครบเดือน)' }} · พยาบาลตรวจ {{ m.nurse }} · แพทย์ {{ m.doctor }} · ให้บริการ {{ m.svc }}</title>
+              <rect x="{{ x }}" y="{{ base - hn }}" width="{{ w }}" height="{{ hn }}" fill="#db2777"></rect>
+              <rect x="{{ x }}" y="{{ base - hn - hd }}" width="{{ w }}" height="{{ hd }}" fill="#3b82f6"></rect>
+              <rect x="{{ x }}" y="{{ base - hn - hd - hs }}" width="{{ w }}" height="{{ hs }}" rx="2" fill="#f59e0b"></rect>
+              {% if (ms | length) <= 24 %}<text x="{{ x + w / 2 }}" y="{{ base - hn - hd - hs - 4 }}" font-size="9.5"
+                    fill="#9d174d" text-anchor="middle">{{ m.pct | round | int }}%</text>{% endif %}
+              {% if (ms | length) <= 18 %}<text x="{{ x + w / 2 }}" y="{{ base - hn / 2 + 4 }}" font-size="10" font-family="Kanit"
+                    font-weight="600" fill="#fff" text-anchor="middle">{{ m.nurse if hn > 14 }}</text>{% endif %}
+            </g>
+            {% if loop.index0 % step == 0 %}
+            <text x="{{ x + w / 2 }}" y="{{ base + 14 }}" font-size="10" fill="#a57c7c" text-anchor="middle">{{ m.label }}</text>
+            {% endif %}
+          {% endfor %}
+        </svg>
+        {% endif %}
+        <div class="note">📈 ตัวเลขในแท่งชมพู = ราย · บนแท่ง = % ที่พยาบาลตรวจ · แท่งจาง = เดือนที่ไม่ครบ
+          <span class="nt">(ไม่นำเดือนที่ไม่ครบไปคิดค่าเฉลี่ยต่อเดือน)</span></div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">3</span>
+        <span><span class="t">รายปีงบประมาณ</span> <span class="st">ต.ค. – ก.ย.</span></span></header>
+      <div class="body">
+        <table class="t tri">
+          <tr><th>ปีงบ</th><th>พยาบาลตรวจ</th><th>%</th><th>เฉลี่ย/เดือน</th><th>เฉลี่ย/วัน</th><th>สูงสุด / ต่ำสุด</th></tr>
+          {% for y in d.yearly %}
+          <tr>
+            <td class="l">{{ y.fy }}<span class="sub">{{ y.months }} เดือน{{ '' if y.complete else ' · ยังไม่ครบปี' }}</span></td>
+            <td><b style="font-family:Kanit;color:#9d174d;font-size:17px">{{ '{:,}'.format(y.nurse) }}</b>
+              <span class="sub">จาก {{ '{:,}'.format(y.total) }} ราย</span></td>
+            <td>{{ y.pct }}%</td>
+            <td>{{ fmt(y.per_month) }}<span class="sub">{{ y.full_months }} เดือนที่ครบ</span></td>
+            <td>{{ y.per_day }}</td>
+            <td>{% if y.max %}{{ y.max.label }} {{ y.max.nurse }}<span class="sub">{{ y.min.label }} {{ y.min.nurse }}</span>{% else %}–{% endif %}</td>
+          </tr>
+          {% endfor %}
+          <tr class="tot">
+            <td class="l">รวมช่วงที่เลือก</td><td>{{ '{:,}'.format(k.nurse) }}</td><td>{{ k.pct }}%</td>
+            <td>{{ fmt(k.per_month) }}</td><td>{{ k.per_day }}</td><td>–</td>
+          </tr>
+        </table>
+        <div class="note">🗂 เลือกช่วงวันที่ให้ครอบคลุมหลายปีงบเพื่อเทียบปีต่อปี (ดูย้อนหลังได้สูงสุด {{ (d.max_days / 365) | round | int }} ปี)</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ====================================================== 4. ตารางรายเดือน -->
+  <section class="block">
+    <header><span class="no">4</span>
+      <span><span class="t">ตารางรายเดือน</span> <span class="st">จำนวนและค่าเฉลี่ยต่อวัน</span></span></header>
+    <div class="body">
+      <table class="t mon">
+        <tr><th>เดือน</th><th>ปีงบ</th><th>จำนวนวัน</th><th>ผู้ป่วยช่วง {{ win }}</th><th>พยาบาลตรวจแทนแพทย์</th>
+          <th>% พยาบาลตรวจ</th><th>เฉลี่ย/วัน</th><th>แพทย์ตรวจ</th><th>พยาบาลให้บริการ</th><th>อื่น ๆ</th></tr>
+        {% for m in d.monthly %}
+        <tr class="{{ '' if m.full else 'part' }}">
+          <td class="l">{{ m.label }}{% if not m.full %}<span class="sub">ไม่ครบเดือน</span>{% endif %}</td>
+          <td>{{ m.fy }}</td><td>{{ m.days }}</td><td>{{ '{:,}'.format(m.total) }}</td>
+          <td><b style="font-family:Kanit;color:#9d174d">{{ '{:,}'.format(m.nurse) }}</b></td>
+          <td>{{ m.pct }}%<span class="pct-bar"><i style="width:{{ m.pct }}%"></i></span></td>
+          <td>{{ m.per_day }}</td><td>{{ '{:,}'.format(m.doctor) }}</td><td>{{ '{:,}'.format(m.svc) }}</td><td>{{ m.other }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="tot">
+          <td class="l">รวม</td><td>–</td><td>{{ '{:,}'.format(k.days) }}</td><td>{{ '{:,}'.format(k.total) }}</td>
+          <td>{{ '{:,}'.format(k.nurse) }}</td><td>{{ k.pct }}%</td><td>{{ k.per_day }}</td>
+          <td>{{ '{:,}'.format(k.doctor) }}</td><td>{{ '{:,}'.format(k.svc) }}</td><td>{{ k.other }}</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================== 5. ชั่วโมง | 6. วัน | 7. ลักษณะผู้ป่วย -->
+  <div class="row c3e">
+    <section class="block">
+      <header><span class="no">5</span>
+        <span><span class="t">รายชั่วโมง</span> <span class="st">เวลาที่มาถึง ER</span></span></header>
+      <div class="body">
+        {% set hmax = (d.hours | map(attribute='total') | max) or 1 %}
+        <div class="bars" style="height:230px">
+          {% for h in d.hours %}
+          <div class="b" title="{{ h.label }} · ทั้งหมด {{ h.total }} · พยาบาลตรวจ {{ h.nurse }}">
+            <div class="n">{{ '{:,}'.format(h.nurse) }}</div><div class="p">{{ h.pct }}%</div>
+            <div class="fill" style="height:{{ (170 * h.nurse / hmax) | round(1) }}px;background:linear-gradient(180deg,#ec4899,#9d174d)"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="bars-x">{% for h in d.hours %}<span>{{ h.label }}</span>{% endfor %}</div>
+        <div class="note">ตัวเลข = จำนวนที่พยาบาลตรวจ · % = สัดส่วนของผู้ป่วยในชั่วโมงนั้น</div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">6</span>
+        <span><span class="t">วันในสัปดาห์</span> <span class="st">เฉลี่ยราย/วัน</span></span></header>
+      <div class="body">
+        {% set wmax = (d.weekdays | map(attribute='avg') | max) or 1 %}
+        <div class="hbars">
+          {% for w in d.weekdays %}
+          <div class="hb">
+            <span class="nm">{{ w.label }} <span class="code">({{ w.days }} วัน · รวม {{ '{:,}'.format(w.nurse) }})</span></span>
+            <span class="bar"><span class="track"><span class="fill" style="width:{{ (100 * w.avg / wmax) | round(1) }}%;background:linear-gradient(90deg,#9d174d,#ec4899)"></span></span>
+              <span class="vl">{{ w.avg }} ราย</span></span>
+          </div>
+          {% endfor %}
+        </div>
+        <table class="t tri" style="margin-top:8px">
+          <tr><th>ประเภทวัน</th><th>วัน</th><th>เฉลี่ย/วัน</th><th>%</th></tr>
+          {% for t in d.daytype %}
+          <tr><td class="l">{{ t.label }}</td><td>{{ t.days }}</td><td>{{ t.avg }}</td><td>{{ t.pct }}%</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">7</span>
+        <span><span class="t">ผู้ป่วยที่พยาบาลตรวจ</span> <span class="st">ประเภท · ระดับ · การจำหน่าย</span></span></header>
+      <div class="body">
+        <div class="donut-wrap">
+          {{ donut(d.pt, '{:,}'.format(k.nurse)) }}
+          {{ legend(d.pt) }}
+        </div>
+        <div class="split" style="margin-top:12px">
+          <div>
+            <div class="mini-h">ระดับความเร่งด่วน</div>
+            <div class="legend">
+              {% for l in d.levels %}
+              <div class="li"><span class="lvl" style="background:{{ l.color }};width:22px;height:22px;font-size:12px;margin-right:2px">{{ l.level }}</span>
+                <span class="nm">{{ l.name }}</span><span class="vl">{{ '{:,}'.format(l.value) }}</span><span class="pc">({{ l.pct }}%)</span></div>
+              {% endfor %}
+            </div>
+          </div>
+          <div>
+            <div class="mini-h">การจำหน่าย</div>
+            {{ legend(d.dispo) }}
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================== 8. โรค | 9. รายพยาบาล -->
+  <div class="row c2">
+    <section class="block">
+      <header><span class="no">8</span>
+        <span><span class="t">10 อันดับโรค</span> <span class="st">ที่พยาบาลตรวจแทนแพทย์ (โรคหลัก)</span></span></header>
+      <div class="body">
+        <ol class="rank">
+          {% for x in d.top_dx %}
+          <li><span class="no" style="background:{{ '#9d174d' if x.rank <= 3 else '#f9a8d4' }};color:#fff">{{ x.rank }}</span>
+            <span class="tx"><span class="nm" title="{{ x.label }}">{{ x.label }} <span class="code">[{{ x.code }}]</span></span>
+              <span class="bar"><span class="track"><span class="fill" style="width:{{ x.bar }}%;background:#db2777"></span></span>
+                <span class="vl">{{ x.value }}</span><span class="pc">{{ x.pct }}%</span></span></span></li>
+          {% endfor %}
+        </ol>
+        {% if d.no_dx %}<div class="note">ยังไม่ลงโรคหลัก {{ d.no_dx }} ราย</div>{% endif %}
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">9</span>
+        <span><span class="t">รายพยาบาลผู้ตรวจ</span> <span class="st">จำนวนราย (ใช้ดูการกระจายภาระงาน)</span></span></header>
+      <div class="body">
+        <div class="hbars">
+          {% for s in d.staff[:15] %}
+          <div class="hb">
+            <span class="nm">{{ s.label }}</span>
+            <span class="bar"><span class="track"><span class="fill" style="width:{{ s.bar }}%;background:linear-gradient(90deg,#7c3aed,#a78bfa)"></span></span>
+              <span class="vl">{{ '{:,}'.format(s.value) }} ราย</span></span>
+          </div>
+          {% endfor %}
+        </div>
+        {% if d.staff | length > 15 %}<div class="note">และอีก {{ d.staff | length - 15 }} คน (ดูครบในไฟล์ Excel)</div>{% endif %}
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================================================ นิยาม -->
+  <section class="block">
+    <header><span class="no">ℹ</span><span><span class="t">นิยามที่ใช้</span></span></header>
+    <div class="body def">
+      <b>ช่วงเวลา</b> — เวลาเข้า ER (<code>enter_er_time</code>) {{ d.start }}:00–{{ d.end }}:59 น. ของทุกวัน ·
+      <b>ผู้ตรวจ</b> — ผู้ลงโรคหลัก (<code>ovstdiag</code>) ถ้าว่างใช้ผู้ตรวจของ visit (<code>ovst.doctor</code>);
+      พยาบาล = ประเภทผู้ให้บริการ 03 ในทะเบียนผู้ให้บริการ (<code>doctor.provider_type_code</code>) ·
+      <b>ตรวจแทนแพทย์</b> — พยาบาลเป็นผู้ตรวจ <u>ไม่รวม</u> "ผู้ป่วยรับบริการอื่น ๆ" (ทำแผล ฉีดยา ตามนัด) และโรคหลัก Z48 (ทำแผล ตัดไหม) / Z23–Z27 (วัคซีน)
+      ซึ่งแยกเป็น "พยาบาลให้บริการ" ·
+      <b>ปี</b> — ปีงบประมาณ ต.ค.–ก.ย. · <b>เฉลี่ยต่อเดือน</b> — คิดเฉพาะเดือนที่มีข้อมูลครบทั้งเดือน ·
+      <b>วันหยุด</b> — ตามปฏิทินวันหยุดของ HOSxP รวมเสาร์-อาทิตย์
+    </div>
+  </section>
+
+  <div class="foot">
+    <div class="src"><b>แหล่งข้อมูล (Data Source)</b> — HOSxP: er_regist / ovst / ovstdiag / doctor / holiday / icd101 · MariaDB ·
+      ไม่มี HN / ชื่อผู้ป่วย · ใช้ภายในโรงพยาบาลเท่านั้น</div>
+    <div class="tag">“ข้อมูลภาระงานที่ชัด<br>ช่วยวางอัตรากำลังได้ตรงจุด”</div>
+  </div>
+  <div class="appinfo">
+    <span><b>ER Dashboard</b> เวอร์ชัน {{ version }} · รายงานพยาบาลตรวจแทนแพทย์</span>
+    <span>📞 ติดต่อ: {{ contact }}</span>
+    {% if dev_contact and dev_contact != contact %}<span>🛠 ผู้พัฒนา: {{ dev_contact }}</span>{% endif %}
+  </div>
+
+</div>
+</body>
+</html>

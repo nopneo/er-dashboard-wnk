@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>เข้าดูรายงาน — {{ hospital }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_v }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icon/favicon-32.png') }}">
+<meta name="theme-color" content="#b91c1c">
+<style>
+  .gate { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+  .gate .card { width: 100%; max-width: 420px; background: #fff; border-radius: 26px; padding: 30px 28px 26px;
+                box-shadow: 0 18px 50px rgba(185, 28, 28, .12); border: 1.5px solid var(--rose-b); text-align: center; }
+  .gate img { width: 78px; height: 78px; }
+  .gate h1 { font-family: 'Kanit'; font-weight: 600; font-size: 24px; color: var(--maroon); margin-top: 12px; }
+  .gate p { font-size: 14.5px; color: var(--muted); margin-top: 4px; }
+  .gate form { margin-top: 20px; display: grid; gap: 12px; }
+  .gate input { font: 600 22px 'Kanit'; letter-spacing: 4px; text-align: center; padding: 12px;
+                border: 2px solid var(--rose-b); border-radius: 16px; color: var(--maroon); width: 100%; }
+  .gate input:focus { outline: none; border-color: var(--red); }
+  .gate button { font: 600 17px 'Kanit'; color: #fff; background: linear-gradient(135deg, #c81e1e, #f05252);
+                 border: 0; border-radius: 16px; padding: 12px; cursor: pointer; }
+  .gate .err { background: #fee2e2; color: #b91c1c; border-radius: 12px; padding: 8px 10px; font-size: 14px; }
+  .gate .back { display: inline-block; margin-top: 16px; font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="sheet gate">
+  <div class="card">
+    <img src="{{ logo_url }}" alt="ตรา{{ hospital }}">
+    <h1>🔒 รายงานพยาบาลตรวจแทนแพทย์</h1>
+    <p>{{ hospital }} · ใส่รหัสเพื่อเข้าดู</p>
+    <form method="post" action="{{ url_for('nurse_login') }}" autocomplete="off">
+      {% for k, v in back.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <input type="password" name="passcode" inputmode="numeric" placeholder="รหัสเข้าดู" required autofocus
+             aria-label="รหัสเข้าดู">
+      {% if error %}<div class="err">{{ error }}</div>{% endif %}
+      <button type="submit">เข้าดูรายงาน</button>
+    </form>
+    <a class="back" href="{{ url_for('dashboard') }}">← กลับ ER Dashboard</a>
+  </div>
+</div>
+</body>
+</html>

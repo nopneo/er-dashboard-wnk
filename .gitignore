@@ -7,6 +7,10 @@ dist/
 .pytest_cache/
 .claude/
 /er_*.jpg
+# ไฟล์ส่งออก (รายงานพยาบาลมีชื่อพยาบาลรายคน)
+/er_*.pdf
+/er_*.png
+/er_*.xlsx
 
 # เฉพาะโรงพยาบาลผู้พัฒนา (รพ.วังน้ำเขียว) — ไม่ขึ้น GitHub
 static/img/hospital_logo.png

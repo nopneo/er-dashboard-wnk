@@ -21,6 +21,7 @@ import re
 import threading
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
 from db import fetch, fetch_one, num
@@ -149,29 +150,6 @@ def kpi_summary(d1, d2, shift):
         "d2d_n": cur["d2d_n"], "d2d_cover": _pct(cur["d2d_n"], n),
         "revisit": cur["rv"], "revisit_rate": rv_rate, "revisit_delta": _delta(rv_rate, rv_prev),
     }
-
-
-# ------------------------------------------- 1b. ระดับ 3-5 ช่วงเย็น 16:00–20:00
-
-EVENING = ("16:00", "20:00")
-
-
-def _evening_raw(d1, d2):
-    return num(fetch_one(f"""
-        select count(*) n {FROM}
-        {_where(d1, d2, "all")} and {LEVEL} between 3 and 5
-          and time(e.enter_er_time) >= '{EVENING[0]}:00' and time(e.enter_er_time) < '{EVENING[1]}:00'
-        """).get("n"))
-
-
-def evening_low(d1, d2):
-    """ผู้ป่วยระดับ 3-5 ที่เข้า ER ช่วง 16:00–20:00 เฉลี่ยต่อวัน (ไม่แยกเวร/ไม่แยกพยาบาล-แพทย์)"""
-    p1, p2 = _prev_range(d1, d2)
-    days = _days(d1, d2)
-    n, prev = _evening_raw(d1, d2), _evening_raw(p1, p2)
-    per_day = round(n / days, 1) if days else 0
-    return {"n": n, "per_day": per_day, "delta": _delta(n, prev),
-            "time": f"{EVENING[0]}–{EVENING[1]}"}
 
 
 # ------------------------------------------------ 2. แนวโน้มรายเดือน
@@ -655,6 +633,17 @@ class Busy(Exception):
     """มีงานคำนวณค้างอยู่เต็มแล้ว — ให้ผู้ใช้ลองใหม่"""
 
 
+@contextmanager
+def build_slot():
+    """คิวคำนวณใหม่ (ใช้ร่วมกับรายงานพยาบาล) — รอเกิน BUILD_WAIT วินาที = Busy"""
+    if not _build_slots.acquire(timeout=BUILD_WAIT):
+        raise Busy()
+    try:
+        yield
+    finally:
+        _build_slots.release()
+
+
 def _cached(key):
     hit = _cache.get(key) if CACHE_TTL else None
     if hit and _time.time() - hit[0] < CACHE_TTL:
@@ -670,13 +659,9 @@ def build(d1=None, d2=None, shift="all"):
     hit = _cached(key)
     if hit is not None:
         return hit
-    if not _build_slots.acquire(timeout=BUILD_WAIT):
-        raise Busy()
-    try:
+    with build_slot():
         hit = _cached(key)          # ระหว่างรอ อาจมีคนคำนวณช่วงเดียวกันเสร็จแล้ว
         return hit if hit is not None else _build(d1, d2, shift, key)
-    finally:
-        _build_slots.release()
 
 
 def _build(d1, d2, shift, key):
@@ -684,7 +669,6 @@ def _build(d1, d2, shift, key):
     # ยิงทุกบล็อกพร้อมกัน — ต่างคนต่างเปิด connection ของตัวเอง
     jobs = {
         "kpi": (kpi_summary, d1, d2, shift),
-        "evening": (evening_low, d1, d2),
         "trend": (visit_trend, d2, shift),
         "triage": (triage, d1, d2, shift),
         "dispo": (disposition, d1, d2, shift),

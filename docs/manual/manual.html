@@ -128,6 +128,9 @@ table.blk { font-size: 9pt; } table.blk td { padding: 3px 7px; } table.blk td:fi
           <tr><td>13–15</td><td>10 อันดับโรคที่ Refer / Admit · 10 อันดับสาเหตุการบาดเจ็บ</td></tr>
           <tr><td>16–18</td><td>ส่งมาจาก OPD · ผู้ป่วยระดับ 1 อยู่ ER เกิน 60 นาที · อุบัติเหตุหมู่</td></tr>
         </table>
+        <h3>รายงานพยาบาลตรวจแทนแพทย์ (/nurse)</h3>
+        <p>ผู้ป่วยที่เข้า ER ช่วง 16:00–20:00 น. และพยาบาลเป็นผู้ตรวจ — รายวัน / รายเดือน / รายปีงบประมาณ
+          แยกงานบริการ (ทำแผล วัคซีน) ออกจากการตรวจ ส่งออก Excel ได้ · มีรหัสเข้าดู (หัวข้อ 8.4)</p>
       </div>
       <div style="flex:.55">
         <img class="shot" src="img/dashboard.jpg" style="width:100%">
@@ -221,7 +224,7 @@ docker build --target export -t er-dashboard-export .   <span class="c"># มี
 docker run -d -p 6200:8080 --env-file .env --restart unless-stopped er-dashboard</pre>
   </section>
 
-  <section class="cont">
+  <section class="cont" style="break-before: page; margin-top: 0">
     <h2><span class="n">7</span>ตั้งค่า (.env)</h2>
     <table>
       <tr><th style="width:34%">ค่า</th><th>ความหมาย</th></tr>
@@ -237,6 +240,10 @@ docker run -d -p 6200:8080 --env-file .env --restart unless-stopped er-dashboard
       <tr><td><code>ER_BOARDING_MIN</code></td><td>เข้า ER → Admit/Refer เกินกี่นาทีถือว่านาน (120)</td></tr>
       <tr><td><code>ER_MAX_DAYS</code> / <code>ER_CACHE_TTL</code> / <code>ER_DB_TIMEOUT</code></td><td>ช่วงวันที่สูงสุด (366) · อายุแคช (120 วิ) · timeout ต่อคำสั่ง (60 วิ)</td></tr>
       <tr><td><code>ER_EXPORT</code></td><td><code>0</code> = ปิดปุ่มส่งออก</td></tr>
+      <tr><td><code>ER_NP_START</code> / <code>ER_NP_END</code></td><td>ช่วงเวลารายงานพยาบาลตรวจแทนแพทย์ (16:00 / 20:00)</td></tr>
+      <tr><td><code>ER_NURSE_PROVIDER_TYPES</code></td><td><code>doctor.provider_type_code</code> ที่นับเป็นพยาบาล (ค่าเริ่มต้น <code>03</code>)</td></tr>
+      <tr><td><code>ER_NP_PASS_HASH</code> / <code>ER_SECRET_KEY</code></td><td>hash ของรหัสเข้าดูรายงานพยาบาล · key ของ cookie เข้าระบบ (หัวข้อ 8.4)</td></tr>
+      <tr><td><code>ER_NP_LOGIN_HOURS</code> / <code>ER_NP_MAX_DAYS</code></td><td>อยู่ในระบบได้กี่ชั่วโมง (12) · ช่วงวันที่ยาวสุดของรายงาน (1827 = 5 ปี)</td></tr>
     </table>
     <p><b>โลโก้และภาพพื้นหลัง</b> — วาง <code>static/img/hospital_logo.png</code> (สี่เหลี่ยมจัตุรัส) และ
       <code>static/img/hero.jpg</code> (แนวนอน) แล้วรีสตาร์ตบริการ</p>
@@ -259,8 +266,22 @@ GROUP BY 1,2,3,4 ORDER BY 5 DESC LIMIT 5;</pre>
     <b>เวลาที่เร็วที่สุด</b>ของ กดเริ่มตรวจ / สั่ง Lab / สั่ง X-ray / สั่งยา และแสดง % ความครอบคลุมคู่กันเสมอ
     ประเด็นนี้ขึ้นเป็น "ข้อสังเกตด้านการบันทึก" ใน Alert ไม่ใช่เรื่องเร่งด่วน</p>
   <div class="box info"><b>เวร</b> แบ่งตามเวลาเข้า ER — 00:00–08:00 ดึก · 08:01–16:00 เช้า · 16:01–23:59 บ่าย</div>
+  <h3>8.4 รายงานพยาบาลตรวจแทนแพทย์ — ตั้งรหัสเข้าดู</h3>
+  <p>รายงานนี้แสดง<b>ชื่อพยาบาลรายคน</b> จึงควรตั้งรหัสเข้าดู (ไม่ตั้ง = ใครเปิดลิงก์ก็ดูได้) เก็บเฉพาะ hash ไม่เก็บรหัสจริง:</p>
+<pre><span class="c"># 1) สร้าง hash ของรหัส (พิมพ์รหัสแล้วกด Enter)</span>
+.venv/bin/python -c "from werkzeug.security import generate_password_hash as g; print(g(input(), method='pbkdf2:sha256'))"
+<span class="c"># 2) สุ่ม key สำหรับ cookie</span>
+.venv/bin/python -c "import secrets; print(secrets.token_hex(32))"</pre>
+<pre><span class="c"># 3) ใส่ใน .env (hash มีเครื่องหมาย $ ต้องครอบด้วย '...')</span>
+ER_NP_PASS_HASH='pbkdf2:sha256:...'
+ER_SECRET_KEY=&lt;ค่าที่สุ่มได้&gt;</pre>
+  <p>รีสตาร์ตบริการ · รหัสครอบทั้งหน้าเว็บ, Excel และปุ่มส่งออก · อยู่ในระบบ 12 ชั่วโมง · ใส่ผิด 10 ครั้งพัก 15 นาที ·
+    เปลี่ยนรหัส = สร้าง hash ใหม่ (ผู้ที่เข้าระบบอยู่จะต้องใส่รหัสใหม่ทันที)</p>
+  <div class="box warn"><b>ตรวจรหัสประเภทผู้ให้บริการ</b> — พยาบาลนับจาก <code>doctor.provider_type_code</code>
+    (ค่าเริ่มต้น <code>03</code>) ตรวจด้วย <code>SELECT provider_type_code, COUNT(*) FROM doctor GROUP BY 1</code>
+    แล้วตั้ง <code>ER_NURSE_PROVIDER_TYPES</code> ถ้าโรงพยาบาลใช้รหัสอื่น</div>
 
-  <section class="cont">
+  <section class="cont" style="break-before: page; margin-top: 0">
     <h2><span class="n">9</span>เปิดผ่านโดเมนของโรงพยาบาล</h2>
     <p>วางใต้ sub-path เช่น <code>https://&lt;โดเมน&gt;/erdash/</code> (Apache) — ใส่<b>ก่อน</b>บรรทัด catch-all <code>ProxyPass /</code>:</p>
 <pre>ProxyPass /erdash/ http://127.0.0.1:6200/
@@ -327,6 +348,9 @@ ProxyPassReverse /erdash/ http://127.0.0.1:6200/
       ≥ <code>ER_MCI_MIN</code> รายภายใน <code>ER_MCI_WINDOW</code> นาที แบบหน้าต่างเลื่อน — เป็นการคัดกรองอัตโนมัติ
       หัวหน้า ER ควรยืนยัน</td></tr>
     <tr><td>สาเหตุการบาดเจ็บ</td><td>รหัส V01–Y98 จัดกลุ่ม 3 หลัก ไม่นับมารับบริการต่อเนื่อง (โรคหลักเป็นรหัส Z)</td></tr>
+    <tr><td>พยาบาลตรวจแทนแพทย์</td><td>เข้า ER 16:00:00–20:00:59 และผู้ลงโรคหลัก (<code>ovstdiag</code>, ถ้าว่างใช้ <code>ovst.doctor</code>)
+      เป็นพยาบาล ไม่รวมงานบริการ (<code>er_pt_type</code> 4, โรคหลัก Z48 / Z23–Z27) ซึ่งแยกนับเป็น "พยาบาลให้บริการ" ·
+      ปีงบประมาณ ต.ค.–ก.ย. · วันหยุดจากตาราง <code>holiday</code></td></tr>
   </table>
 
   <section class="cont">

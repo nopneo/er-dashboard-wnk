@@ -22,7 +22,7 @@ GRANT SELECT ON hos.* TO 'er_ro'@'%';      -- จำกัด host ให้แ�
 ## 2. ติดตั้งบน Linux
 
 ```bash
-unzip er_dashboard-1.0.0.zip -d /opt && cd /opt/er_dashboard
+unzip er_dashboard-1.1.0.zip -d /opt && cd /opt/er_dashboard
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env && nano .env                          # ใส่ DB_HOST / DB_USER / DB_PASS
 .venv/bin/python app.py                                    # ทดลอง: http://127.0.0.1:6200/
@@ -84,6 +84,13 @@ copy .env.example .env ; notepad .env
 | `ER_RED_MAX_MIN` | เกณฑ์บล็อก 17 ผู้ป่วยระดับ 1 อยู่ใน ER เกินกี่นาที (ค่าเริ่มต้น 60) |
 | `ER_MCI_MIN`, `ER_MCI_WINDOW` | อุบัติเหตุหมู่: จำนวนรายขั้นต่ำ (5) ภายในกี่นาที (60) |
 | `ER_MAX_DAYS` | ช่วงวันที่ยาวสุดที่ดึงได้ต่อครั้ง (ค่าเริ่มต้น 366) |
+| `ER_NP_START` / `ER_NP_END` | ช่วงเวลาของรายงานพยาบาลตรวจแทนแพทย์ (ค่าเริ่มต้น 16:00 / 20:00) |
+| `ER_NURSE_PROVIDER_TYPES` | `doctor.provider_type_code` ที่นับเป็นพยาบาล คั่นด้วยจุลภาค (ค่าเริ่มต้น 03) |
+| `ER_NP_PASS_HASH` | hash (pbkdf2) ของรหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ — ไม่ตั้ง = เปิดดูได้ไม่ต้องใส่รหัส · สร้างด้วย `python -c "from werkzeug.security import generate_password_hash as g; print(g(input(), method='pbkdf2:sha256'))"` แล้วใส่ใน `.env` ครอบด้วย `'...'` |
+| `ER_SECRET_KEY` | key สำหรับ cookie เข้าระบบ (สุ่มยาว ๆ เช่น `python -c "import secrets; print(secrets.token_hex(32))"`) — ไม่ตั้งจะสร้างจาก `ER_NP_PASS_HASH` |
+| `ER_NP_LOGIN_HOURS` | อยู่ในระบบได้นานกี่ชั่วโมงหลังใส่รหัส (ค่าเริ่มต้น 12) |
+| `ER_TRUSTED_PROXIES` | IP ของ reverse proxy ที่เชื่อ header `CF-Connecting-IP` / `X-Forwarded-For` ได้ (ค่าเริ่มต้น `127.0.0.1,::1`) — ใช้นับรหัสผิดต่อ IP · ถ้า Apache อยู่คนละเครื่องให้ใส่ IP เครื่องนั้น |
+| `ER_NP_MAX_DAYS` | ช่วงวันที่ยาวสุดของรายงานพยาบาลตรวจแทนแพทย์ (ค่าเริ่มต้น 1827 = 5 ปี) |
 | `ER_CACHE_TTL` | อายุแคชข้อมูลเป็นวินาที (ค่าเริ่มต้น 120, 0 = ปิด) |
 | `ER_MAX_BUILDS` | จำนวนช่วงวันที่ที่คำนวณใหม่พร้อมกันได้ต่อโปรเซส (ค่าเริ่มต้น 2) — กันฐานข้อมูล HOSxP ช้า |
 | `ER_BUILD_WAIT` | วินาทีที่รอคิวคำนวณก่อนตอบ 503 "ลองใหม่" (ค่าเริ่มต้น 60) |

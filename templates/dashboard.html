@@ -71,6 +71,7 @@
   <a class="dl" href="{{ url_for('export', fmt='pdf') }}{{ q }}">⬇ PDF</a>
   <span class="hint">ส่งออกใช้เวลา ~10 วินาที</span>
   {% endif %}
+  <a class="dl" href="{{ url_for('nurse') }}">🩺 พยาบาลตรวจแทนแพทย์</a>
   <span class="asof">ข้อมูล ณ {{ d.generated_at }}</span>
 </form>
 
@@ -156,12 +157,6 @@
           <div class="l">กลับมา ER ซ้ำ<small>Revisit ภายใน 48 ชม.</small></div>
           <div class="v">{{ k.revisit_rate }}%</div><div class="u">{{ k.revisit }} ราย</div>
           {{ delta(k.revisit_delta) }}
-        </div>
-        {% set ev = d.evening %}
-        <div class="kpi eve g-amber"><span class="e">🌆</span>
-          <div class="l">ระดับ 3-5 ช่วงเย็น<small>{{ ev.time }} น. · เฉลี่ยต่อวัน</small></div>
-          <div class="v">{{ ev.per_day }}</div><div class="u">ราย/วัน · รวม {{ '{:,}'.format(ev.n) }} ราย</div>
-          {{ delta(ev.delta) }}
         </div>
       </div>
     </div>

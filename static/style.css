@@ -154,7 +154,7 @@ body {
 
 /* ------------------------------------------------------------ 1. KPI */
 
-.kpis { display: grid; grid-template-columns: 1fr 1fr 1.45fr repeat(5, 1fr); gap: 11px; }
+.kpis { display: grid; grid-template-columns: repeat(7, 1fr); gap: 11px; }
 .kpi {
   border-radius: 22px; padding: 13px 14px 12px; color: #fff; position: relative;
   overflow: hidden; box-shadow: 0 10px 22px rgba(170,50,50,.20);
