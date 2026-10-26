@@ -90,7 +90,8 @@ copy .env.example .env ; notepad .env
 | `ER_NP_OPEN` | `1` = เปิดรายงานพยาบาลโดยไม่ใช้รหัส (เฉพาะเครื่องที่เข้าได้จาก LAN เท่านั้น) · มี `ER_NP_PASS_HASH` แล้วค่านี้ไม่มีผล |
 | `ER_SECRET_KEY` | key สำหรับ cookie เข้าระบบ (สุ่มยาว ๆ เช่น `python -c "import secrets; print(secrets.token_hex(32))"`) — ไม่ตั้งจะสร้างจาก `ER_NP_PASS_HASH` |
 | `ER_NP_LOGIN_HOURS` | อยู่ในระบบได้นานกี่ชั่วโมงหลังใส่รหัส (ค่าเริ่มต้น 12) |
-| `ER_TRUSTED_PROXIES` | IP ของ reverse proxy ที่เชื่อ header `CF-Connecting-IP` / `X-Forwarded-For` ได้ (ค่าเริ่มต้น `127.0.0.1,::1`) — ใช้นับรหัสผิดต่อ IP · ถ้า Apache อยู่คนละเครื่องให้ใส่ IP เครื่องนั้น |
+| `ER_TRUSTED_PROXIES` | IP ของ reverse proxy ที่เชื่อ header `X-Forwarded-For` ได้ (ค่าเริ่มต้น `127.0.0.1,::1`) — ใช้นับรหัสผิดต่อ IP · ถ้า Apache อยู่คนละเครื่องให้ใส่ IP เครื่องนั้น |
+| `ER_CF_RANGES` | ช่วง IP ของ Cloudflare คั่นด้วยจุลภาค (ค่าเริ่มต้นตาม cloudflare.com/ips) — เชื่อ `CF-Connecting-IP` เฉพาะคำขอที่มาจากช่วงนี้ |
 | `ER_NP_MAX_DAYS` | ช่วงวันที่ยาวสุดของรายงานพยาบาลตรวจแทนแพทย์ (ค่าเริ่มต้น 1827 = 5 ปี) |
 | `ER_CACHE_TTL` | อายุแคชข้อมูลเป็นวินาที (ค่าเริ่มต้น 120, 0 = ปิด) |
 | `ER_MAX_BUILDS` | จำนวนช่วงวันที่ที่คำนวณใหม่พร้อมกันได้ต่อโปรเซส (ค่าเริ่มต้น 2) — กันฐานข้อมูล HOSxP ช้า |
