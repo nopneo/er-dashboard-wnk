@@ -15,6 +15,7 @@
 
 import os
 import re
+import unicodedata
 from calendar import monthrange
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
@@ -22,7 +23,7 @@ from io import BytesIO
 
 from cache import TTLCache
 from db import fetch, num
-from queries import CACHE_TTL, DISPOSITION, LEVEL, LEVEL_COLOR, LEVEL_NAME, TH_MONTH, _pct, _thai_date, _thai_datetime
+from queries import CACHE_TTL, build_slot, DISPOSITION, LEVEL, LEVEL_COLOR, LEVEL_NAME, TH_MONTH, _pct, _thai_date, _thai_datetime
 
 
 def _hhmm(name, default):
@@ -54,6 +55,35 @@ GROUPS = [  # (key, ชื่อ, สี)
 GROUP_NAME = {k: n for k, n, _ in GROUPS}
 
 _cache = TTLCache(maxsize=16)
+
+
+#: คำนำหน้าที่เขียนแยกจากชื่อด้วยช่องว่าง (เช่น "นาง สมศรี ใจดี") — ต้องเก็บไว้คู่กับชื่อ
+TITLES = {"นาย", "นาง", "นางสาว", "น.ส.", "ว่าที่", "พว.", "พย.", "พยาบาลวิชาชีพ"}
+
+
+#: จำนวนตัวอักษรต้นนามสกุลที่แสดง (ไม่นับสระ/วรรณยุกต์บนล่าง)
+SURNAME_SHOW = 2
+
+
+def _mask_surname(name):
+    """คำนำหน้า + ชื่อ + นามสกุลบางส่วน เช่น "นางสาวสมศรี ใจดี" → "นางสาวสมศรี ใจxxx"
+    ใช้ทั้งหน้าเว็บ, Excel และไฟล์ส่งออก — นามสกุลเต็มไม่ออกจากฟังก์ชันนี้ (นามสกุลสั้นแสดงน้อยลง ไม่ครบคำ)"""
+    p = name.split()
+    i = 0
+    while i < len(p) - 1 and (p[i] in TITLES or p[i].endswith(".")):
+        i += 1
+    first, surname = " ".join(p[:i + 1]), "".join(p[i + 1:])
+    if not surname:
+        return first
+    show = min(SURNAME_SHOW, sum(unicodedata.category(c) != "Mn" for c in surname) - 1)
+    keep, base = "", 0
+    for ch in surname:
+        if unicodedata.category(ch) != "Mn":      # สระ/วรรณยุกต์บนล่างติดไปกับตัวหน้า
+            if base == show:
+                break
+            base += 1
+        keep += ch
+    return f"{first} {keep}xxx"
 
 
 def _fy(d):
@@ -134,13 +164,18 @@ def build(d1, d2):
     hit = _cache.get(key, CACHE_TTL or 1)
     if hit is not None:
         return hit
+    with build_slot():
+        hit = _cache.get(key, CACHE_TTL or 1)
+        return hit if hit is not None else _build(d1, d2, key)
 
+
+def _build(d1, d2, key):
     a, b = date.fromisoformat(d1), date.fromisoformat(d2)
     rows = []
     for r in _rows(d1, d2):
         r = {"d": date.fromisoformat(str(r["vstdate"])[:10]), "tm": str(r["tm"]), "pt": int(num(r["pt"])),
              "lvl": int(num(r["lvl"], 5)), "dch": int(num(r["dch"])), "pdx": r["pdx"] or "",
-             "ex": r["ex"], "exc": r["exc"] or "", "exn": (r["exn"] or "").strip()}
+             "ex": r["ex"], "exc": r["exc"] or "", "exn": _mask_surname(r["exn"] or "")}
         r["g"] = _group(r)
         rows.append(r)
     nurse = [r for r in rows if r["g"] == "nurse"]
@@ -198,7 +233,9 @@ def build(d1, d2):
                per_month=round(sum(m["nurse"] for m in full_m) / len(full_m), 1) if full_m else None,
                full_months=len(full_m),
                nurse_l12=sum(r["lvl"] <= 2 for r in nurse),
-               nurse_ar=sum(r["dch"] in (2, 3) for r in nurse))
+               nurse_ar=sum(r["dch"] in (2, 3) for r in nurse),
+               l345=sum(3 <= r["lvl"] <= 5 for r in rows))
+    kpi["l345_per_day"] = round(kpi["l345"] / days, 1) if days else 0
     kpi["nurse_l12_pct"] = _pct(kpi["nurse_l12"], tot["nurse"])
     kpi["nurse_ar_pct"] = _pct(kpi["nurse_ar"], tot["nurse"])
 
@@ -329,6 +366,8 @@ def to_xlsx(d, hospital=""):
         ("อื่น ๆ / ไม่ระบุผู้ตรวจ (ราย)", k["other"]),
         ("พยาบาลตรวจ · ระดับ 1-2 (ราย)", k["nurse_l12"]),
         ("พยาบาลตรวจ · Admit/Refer (ราย)", k["nurse_ar"]),
+        ("ระดับ 3-5 รวมทุกผู้ตรวจ (ราย)", k["l345"]),
+        ("ระดับ 3-5 รวมทุกผู้ตรวจ เฉลี่ยต่อวัน (ราย)", k["l345_per_day"]),
         (None, None),
         ("นิยาม", None),
         ("ช่วงเวลา", f"เวลาเข้า ER (enter_er_time) {d['start']}:00–{d['end']}:59 ทุกวัน"),
@@ -341,8 +380,8 @@ def to_xlsx(d, hospital=""):
     for a, b in lines:
         ws.append([a, b])
     ws["A1"].font = Font(bold=True, size=14, color="7F1D1D")
-    ws["A18"].font = Font(bold=True, color="7F1D1D")
-    for r in range(7, 17):
+    ws["A20"].font = Font(bold=True, color="7F1D1D")
+    for r in range(7, 19):
         ws.cell(r, 1).font = Font(bold=r == 8)
         ws.cell(r, 2).font = Font(bold=r == 8, color="B91C1C" if r == 8 else "000000")
     ws["B9"].number_format = '0.0"%"'

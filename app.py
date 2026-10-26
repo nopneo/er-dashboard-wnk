@@ -7,6 +7,7 @@ production:  gunicorn -b 0.0.0.0:6200 app:app   (ออกผ่าน sub-path 
 import functools
 import hashlib
 import os
+import re
 import secrets
 import tempfile
 import threading
@@ -31,6 +32,9 @@ import render
 from cache import TTLCache
 
 
+_PREFIX_RE = re.compile(r"(/[A-Za-z0-9._~-]+)+/?")
+
+
 class PrefixMiddleware:
     """อ่าน X-Forwarded-Prefix → SCRIPT_NAME และ X-Forwarded-Proto → url_scheme (sub-path หลัง proxy)"""
 
@@ -39,13 +43,14 @@ class PrefixMiddleware:
 
     def __call__(self, environ, start_response):
         prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "")
-        if prefix:
+        # รับเฉพาะ path ภายใน เช่น /erdash — กันคนส่ง header ปลอม (//evil.example) ให้ลิงก์ชี้ออกนอกเว็บ
+        if prefix and _PREFIX_RE.fullmatch(prefix):
             environ["SCRIPT_NAME"] = prefix.rstrip("/")
             path = environ.get("PATH_INFO", "")
             if path.startswith(prefix):
                 environ["PATH_INFO"] = path[len(prefix):] or "/"
         proto = environ.get("HTTP_X_FORWARDED_PROTO")
-        if proto:
+        if proto in ("http", "https"):
             environ["wsgi.url_scheme"] = proto
         return self.wsgi_app(environ, start_response)
 
@@ -94,10 +99,18 @@ def _branding():
     }
 
 
+#: ทุกอย่างโหลดจากเว็บตัวเองเท่านั้น (ไม่มี CDN) · inline ใช้กับ style/สคริปต์ปุ่มส่งออกในหน้า
+CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+       "script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; "
+       "form-action 'self'; frame-ancestors 'self'")
+
+
 @app.after_request
 def _security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Content-Security-Policy", CSP)
     # cookie ผ่าน https (หลัง proxy) ให้ Secure — เข้าตรง http://<ip>:6200 บน LAN ยังใช้ได้
     if request.is_secure:
         resp.headers.setlist("Set-Cookie", [c if "; Secure" in c else c + "; Secure"
@@ -161,11 +174,13 @@ def _nurse_params():
     return _range(nurse_report.MAX_DAYS, fy.replace(year=fy.year - 1))
 
 
-# ---- รหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ (มีชื่อพยาบาลรายคน) — ไม่ตั้ง ER_NP_PASS_HASH = เปิดดูได้เลย
+# ---- รหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ (มีชื่อพยาบาลรายคน)
+# ไม่ตั้ง ER_NP_PASS_HASH = ปิดหน้ารายงาน · ต้องการเปิดโดยไม่ใช้รหัส (เช่นใช้เฉพาะใน LAN) ตั้ง ER_NP_OPEN=1
 # เก็บเฉพาะ hash: python -c "from werkzeug.security import generate_password_hash as g; print(g(input(), method='pbkdf2:sha256'))"
 NP_PASS_HASH = os.getenv("ER_NP_PASS_HASH", "").strip()
 #: เปลี่ยนรหัส = tag เปลี่ยน → session เดิมใช้ไม่ได้ทันที
 _NP_TAG = hashlib.sha256(NP_PASS_HASH.encode()).hexdigest()[:16]
+NP_OPEN = not NP_PASS_HASH and os.getenv("ER_NP_OPEN") == "1"
 NP_LOGIN_HOURS = int(os.getenv("ER_NP_LOGIN_HOURS", "12"))
 NP_MAX_FAIL = 10
 NP_FAIL_WINDOW = 900
@@ -183,15 +198,23 @@ _np_token = URLSafeTimedSerializer(app.secret_key, salt="nurse-export")
 
 def _np_ok():
     """ผ่านรหัสแล้ว หรือเป็น chromium ของปุ่มส่งออกที่ถือ token อายุสั้น"""
-    if not NP_PASS_HASH or session.get("np") == _NP_TAG:
+    if NP_OPEN or (NP_PASS_HASH and session.get("np") == _NP_TAG):
         return True
+    if not NP_PASS_HASH:
+        return False
     try:
         return _np_token.loads(request.args.get("t", ""), max_age=120) == _NP_TAG
     except BadSignature:
         return False
 
 
+#: เครื่อง reverse proxy ที่เชื่อ header IP ของผู้ใช้ได้ — คนอื่นส่ง header ปลอมมาเลี่ยงการนับรหัสผิดไม่ได้
+TRUSTED_PROXIES = {x.strip() for x in os.getenv("ER_TRUSTED_PROXIES", "127.0.0.1,::1").split(",") if x.strip()}
+
+
 def _client_ip():
+    if request.remote_addr not in TRUSTED_PROXIES:
+        return request.remote_addr
     xff = request.headers.get("X-Forwarded-For", "")
     return request.headers.get("CF-Connecting-IP") or (xff.split(",")[-1].strip() if xff else request.remote_addr)
 
@@ -207,8 +230,10 @@ def nurse_required(view):
 
 @app.route("/nurse/login", methods=["GET", "POST"])
 def nurse_login():
-    if not NP_PASS_HASH:
+    if NP_OPEN:
         return redirect(url_for("nurse"))
+    if not NP_PASS_HASH:            # ยังไม่ได้ตั้งรหัส — ปิดรายงานไว้ก่อน ไม่ให้ชื่อบุคลากรเปิดดูได้ทั่วไป
+        return render_template("nurse_login.html", error=None, back={}, closed=True), 403
     src = request.form if request.method == "POST" else request.args
     back = {k: v.isoformat() for k in ("d1", "d2") if (v := _parse_date(src.get(k)))}
     error = None
@@ -226,7 +251,7 @@ def nurse_login():
             _np_fail.set(ip, fails + 1)
             time.sleep(1)                      # ชะลอการเดารหัส
             error = "รหัสไม่ถูกต้อง"
-    return render_template("nurse_login.html", error=error, back=back), (401 if error else 200)
+    return render_template("nurse_login.html", error=error, back=back, closed=False), (401 if error else 200)
 
 
 @app.route("/nurse/logout")
@@ -378,6 +403,11 @@ def manifest():
     })
     resp.mimetype = "application/manifest+json"
     return resp
+
+
+@app.errorhandler(queries.Busy)
+def _busy(_e):
+    return ({"error": "ระบบกำลังประมวลผลคำขออื่นอยู่ ลองใหม่ในอีกครู่"}, 503, {"Retry-After": "30"})
 
 
 @app.route("/healthz")

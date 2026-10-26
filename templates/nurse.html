@@ -23,6 +23,8 @@
   .def { font-size: 13.5px; line-height: 1.75; color: var(--ink); }
   .def b { color: var(--maroon); font-family: 'Kanit'; font-weight: 600; }
   @media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
+  .kpis.k8 { grid-auto-flow: dense; }
+  @media (min-width: 1600px) { .kpis.k8 { grid-template-columns: repeat(3, 1fr) 1.3fr repeat(4, 1fr); } }
 </style>
 </head>
 
@@ -103,7 +105,7 @@
       <span class="filters"><span class="chip">📅 {{ d.period_label }}</span><span class="chip">🕓 {{ win }}</span></span>
     </header>
     <div class="body">
-      <div class="kpis">
+      <div class="kpis k8">
         <div class="kpi g-pink-d"><span class="e">🩺</span>
           <div class="l">พยาบาลตรวจแทนแพทย์<small>Nurse-examined visits</small></div>
           <div class="v">{{ '{:,}'.format(k.nurse) }}</div><div class="u">ราย · {{ '{:,}'.format(k.days) }} วัน</div>
@@ -133,6 +135,10 @@
         <div class="kpi g-maroon"><span class="e">🚨</span>
           <div class="l">พยาบาลตรวจ · ระดับ 1-2<small>ควรทบทวนว่าได้ปรึกษาแพทย์</small></div>
           <div class="v">{{ '{:,}'.format(k.nurse_l12) }}</div><div class="u">ราย · {{ k.nurse_l12_pct }}% · Admit/Refer {{ k.nurse_ar }}</div>
+        </div>
+        <div class="kpi eve g-orange"><span class="e">📊</span>
+          <div class="l">ระดับ 3-5<small>เฉลี่ยต่อวัน · พยาบาล+แพทย์</small></div>
+          <div class="v">{{ k.l345_per_day }}</div><div class="u">ราย/วัน · รวม {{ '{:,}'.format(k.l345) }} ราย</div>
         </div>
       </div>
     </div>

@@ -30,6 +30,10 @@
   <div class="card">
     <img src="{{ logo_url }}" alt="ตรา{{ hospital }}">
     <h1>🔒 รายงานพยาบาลตรวจแทนแพทย์</h1>
+    {% if closed %}
+    <p>{{ hospital }} · ยังไม่ได้ตั้งรหัสเข้าดู จึงปิดรายงานไว้</p>
+    <div class="err">ผู้ดูแลระบบ: ตั้ง <code>ER_NP_PASS_HASH</code> ใน .env (ดู INSTALL.md) แล้วรีสตาร์ตบริการ</div>
+    {% else %}
     <p>{{ hospital }} · ใส่รหัสเพื่อเข้าดู</p>
     <form method="post" action="{{ url_for('nurse_login') }}" autocomplete="off">
       {% for k, v in back.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
@@ -38,6 +42,7 @@
       {% if error %}<div class="err">{{ error }}</div>{% endif %}
       <button type="submit">เข้าดูรายงาน</button>
     </form>
+    {% endif %}
     <a class="back" href="{{ url_for('dashboard') }}">← กลับ ER Dashboard</a>
   </div>
 </div>

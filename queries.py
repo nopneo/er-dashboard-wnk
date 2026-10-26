@@ -18,8 +18,10 @@
 
 import os
 import re
+import threading
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
 from db import fetch, fetch_one, num
@@ -455,7 +457,8 @@ def injury_causes(d1, d2, shift, limit=10):
 _DEP_RE = re.compile(r"[0-9A-Za-z]{1,5}")
 ER_DEPCODE = os.getenv("ER_DEPCODE", "011")
 ER_DEPCODE = ER_DEPCODE if _DEP_RE.fullmatch(ER_DEPCODE) else "011"
-NOT_DEPT = tuple(c for c in os.getenv("ER_NOT_DEPCODES", "999").split(",") if _DEP_RE.fullmatch(c.strip()))
+NOT_DEPT = tuple(c for c in (x.strip() for x in os.getenv("ER_NOT_DEPCODES", "999").split(","))
+                 if _DEP_RE.fullmatch(c))
 
 
 def from_opd(d1, d2, shift, limit=5):
@@ -620,16 +623,48 @@ def alerts(kpi, tri, ttd, q, load, red=None, mci=None):
 CACHE_TTL = int(os.getenv("ER_CACHE_TTL", "120"))
 _cache = {}
 
+#: จำนวนช่วงวันที่ที่คำนวณใหม่พร้อมกันได้ต่อโปรเซส — กันคนยิงช่วงวันที่ไม่ซ้ำรัว ๆ จน HOSxP ช้าทั้งโรงพยาบาล
+MAX_BUILDS = max(1, int(os.getenv("ER_MAX_BUILDS", "2")))
+BUILD_WAIT = int(os.getenv("ER_BUILD_WAIT", "60"))
+_build_slots = threading.BoundedSemaphore(MAX_BUILDS)
+
+
+class Busy(Exception):
+    """มีงานคำนวณค้างอยู่เต็มแล้ว — ให้ผู้ใช้ลองใหม่"""
+
+
+@contextmanager
+def build_slot():
+    """คิวคำนวณใหม่ (ใช้ร่วมกับรายงานพยาบาล) — รอเกิน BUILD_WAIT วินาที = Busy"""
+    if not _build_slots.acquire(timeout=BUILD_WAIT):
+        raise Busy()
+    try:
+        yield
+    finally:
+        _build_slots.release()
+
+
+def _cached(key):
+    hit = _cache.get(key) if CACHE_TTL else None
+    if hit and _time.time() - hit[0] < CACHE_TTL:
+        return hit[1]
+    return None
+
 
 def build(d1=None, d2=None, shift="all"):
     today = date.today()
     d2 = d2 or today.isoformat()
     d1 = d1 or today.replace(day=1).isoformat()
     key = (d1, d2, shift)
-    if CACHE_TTL:
-        hit = _cache.get(key)
-        if hit and _time.time() - hit[0] < CACHE_TTL:
-            return hit[1]
+    hit = _cached(key)
+    if hit is not None:
+        return hit
+    with build_slot():
+        hit = _cached(key)          # ระหว่างรอ อาจมีคนคำนวณช่วงเดียวกันเสร็จแล้ว
+        return hit if hit is not None else _build(d1, d2, shift, key)
+
+
+def _build(d1, d2, shift, key):
 
     # ยิงทุกบล็อกพร้อมกัน — ต่างคนต่างเปิด connection ของตัวเอง
     jobs = {
