@@ -1,12 +1,13 @@
 # ER Dashboard — แดชบอร์ดบริหารจัดการห้องฉุกเฉิน (HOSxP)
 
-> **เวอร์ชัน 1.0.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
+> **เวอร์ชัน 1.1.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
 > ดาวน์โหลดชุดติดตั้ง: [Releases](https://github.com/nopneo/er-dashboard-wnk/releases/latest) · สรุปขั้นตอน: [INSTALL.md](INSTALL.md) ·
 > ความปลอดภัย: [SECURITY.md](SECURITY.md) · การเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
 
 รายงานอินโฟกราฟิก 18 บล็อก ดึงข้อมูลสดจาก HOSxP (MariaDB `hos`) โทนแดง/ชมพู หน้าตาชุดเดียวกับ
 [IPD Dashboard](https://github.com/nopneo/ipd-dashboard-wnk)
 ใช้ได้ทั้งเป็น **เว็บ live** (เปิดจากมือถือได้ เพิ่มลงหน้าจอโฮมเป็นไอคอนแอป) และ **กดส่งออกเป็น JPG / PNG / PDF**
+พร้อมรายงาน **พยาบาลตรวจแทนแพทย์ 16:00–20:00 น.** (มีรหัสเข้าดู, ส่งออก Excel)
 
 ![ER Dashboard](docs/manual/img/dashboard.jpg)
 
