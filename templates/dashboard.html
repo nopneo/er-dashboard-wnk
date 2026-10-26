@@ -426,7 +426,7 @@
             <div class="p">{{ k.revisit_rate }}% · เกณฑ์ ≤ 5% · ไม่นับรหัส Z / นัด / รับบริการ</div></div>
           <div class="qt {{ 'warn' if qq.ama > 0 }}"><div class="l">ปฏิเสธการรักษา / หนีกลับ</div>
             <div class="v">{{ qq.ama }}<span class="u">ราย</span></div>
-            <div class="p">{{ qq.ama_pct }}% ของผู้มา ER</div></div>
+            <div class="p">ปฏิเสธ {{ qq.refuse }} · หนีกลับ {{ qq.escape }} · {{ qq.ama_pct }}%</div></div>
           <div class="qt {{ 'warn' if k.d2d_cover < 80 else 'ok' }}"><div class="l">มีเวลาพบแพทย์</div>
             <div class="v">{{ k.d2d_cover }}<span class="u">%</span></div>
             <div class="p">{{ k.d2d_n }} ราย · เป้าหมาย ≥ 80%</div></div>

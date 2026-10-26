@@ -289,7 +289,8 @@ DISPOSITION = [
     ("admit", "Admit", (3,), "#ef4444"),
     ("refer", "ส่งต่อ (Refer)", (2,), "#3b82f6"),
     ("obs", "สังเกตอาการ", (5,), "#f59e0b"),
-    ("ama", "ปฏิเสธการรักษา / หนีกลับ", (7, 8), "#8b5cf6"),
+    ("refuse", "ปฏิเสธการรักษา", (7,), "#8b5cf6"),
+    ("escape", "หนีกลับ", (8,), "#ec4899"),
 ]
 
 
@@ -449,7 +450,7 @@ def quality(d1, d2, shift):
     r = fetch_one(f"""
         select count(*) n,
           sum(o.ovstist = '04') ems_als, sum(o.ovstist = '06') ems_fr, sum(o.ovstist = '03') refer_in,
-          sum(e.er_dch_type in (7, 8)) ama,
+          sum(e.er_dch_type in (7, 8)) ama, sum(e.er_dch_type = 7) refuse, sum(e.er_dch_type = 8) escape,
           sum(not exists(select 1 from ovstdiag d where d.vn = e.vn and d.diagtype = '1')) no_pdx,
           sum(e.er_dch_type is null) no_dch,
           sum({LEVEL} = 1 and e.er_dch_type in (2, 3)) l1_ar, sum({LEVEL} = 1) l1
@@ -461,7 +462,7 @@ def quality(d1, d2, shift):
         "ems": v["ems_als"] + v["ems_fr"], "ems_als": v["ems_als"], "ems_fr": v["ems_fr"],
         "ems_pct": _pct(v["ems_als"] + v["ems_fr"], n),
         "refer_in": v["refer_in"], "refer_in_pct": _pct(v["refer_in"], n),
-        "ama": v["ama"], "ama_pct": _pct(v["ama"], n),
+        "ama": v["ama"], "ama_pct": _pct(v["ama"], n), "refuse": v["refuse"], "escape": v["escape"],
         "no_pdx": v["no_pdx"], "no_pdx_pct": _pct(v["no_pdx"], n),
         "no_dch": v["no_dch"], "no_dch_pct": _pct(v["no_dch"], n),
     }
@@ -678,7 +679,7 @@ def alerts(kpi, tri, ttd, q, load, red=None, mci=None):
         out.append({"level": "mid", "issue": f"รอ Refer เกิน {ttd['cutoff']} นาที {ttd['refer']['over']} ราย",
                     "where": "ER → ศูนย์ส่งต่อ", "status": "เฝ้าระวัง", "action": "ทบทวนขั้นตอนประสานส่งต่อ"})
     if q["ama"] > 0:
-        out.append({"level": "mid", "issue": f"ปฏิเสธการรักษา / หนีกลับ {q['ama']} ราย",
+        out.append({"level": "mid", "issue": f"ปฏิเสธการรักษา {q['refuse']} ราย · หนีกลับ {q['escape']} ราย",
                     "where": "ER", "status": "ติดตาม", "action": "ติดตามผู้ป่วย / บันทึกเหตุผล"})
     if tri["missing_pct"] > 5:
         out.append({"level": "info", "issue": f"ลงทะเบียน ER แต่ไม่ได้คัดกรอง {tri['missing']} ราย ({tri['missing_pct']}%) — ไม่นับในรายงาน",
