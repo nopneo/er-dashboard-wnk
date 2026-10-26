@@ -22,7 +22,7 @@ GRANT SELECT ON hos.* TO 'er_ro'@'%';      -- จำกัด host ให้แ�
 ## 2. ติดตั้งบน Linux
 
 ```bash
-unzip er_dashboard-1.1.0.zip -d /opt && cd /opt/er_dashboard
+unzip er_dashboard-1.2.0.zip -d /opt && cd /opt/er_dashboard
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env && nano .env                          # ใส่ DB_HOST / DB_USER / DB_PASS
 .venv/bin/python app.py                                    # ทดลอง: http://127.0.0.1:6200/

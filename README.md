@@ -1,6 +1,6 @@
 # ER Dashboard — แดชบอร์ดบริหารจัดการห้องฉุกเฉิน (HOSxP)
 
-> **เวอร์ชัน 1.1.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
+> **เวอร์ชัน 1.2.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
 > ดาวน์โหลดชุดติดตั้ง: [Releases](https://github.com/nopneo/er-dashboard-wnk/releases/latest) · สรุปขั้นตอน: [INSTALL.md](INSTALL.md) ·
 > ความปลอดภัย: [SECURITY.md](SECURITY.md) · การเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
 
