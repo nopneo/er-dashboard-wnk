@@ -154,7 +154,7 @@
           {{ delta(k.d2d_delta) }}
         </div>
         <div class="kpi g-purple"><span class="e">🔁</span>
-          <div class="l">กลับมา ER ซ้ำ<small>Revisit ภายใน 48 ชม.</small></div>
+          <div class="l">กลับมา ER ซ้ำ<small>Revisit ≤ 48 ชม. · ไม่นับ Z / นัด</small></div>
           <div class="v">{{ k.revisit_rate }}%</div><div class="u">{{ k.revisit }} ราย</div>
           {{ delta(k.revisit_delta) }}
         </div>
@@ -232,8 +232,9 @@
             <td>{{ (k.admit_pct + k.refer_pct) | round(1) }}%</td>
           </tr>
         </table>
-        <div class="note">⏱ เวลาพบแพทย์ = เวลาที่<b>เร็วที่สุด</b>ของ กดเริ่มตรวจ / สั่ง Lab / X-ray / ยา
-          · ยังไม่ลงระดับ {{ d.triage.missing }} ราย
+        <div class="note">⏱ เวลาพบแพทย์ = เวลาที่<b>เร็วที่สุด</b>ของ กดเริ่มตรวจ / สั่ง Lab / X-ray / ยา /
+          เวลาที่พยาบาลจด "รายงานแพทย์" ใน HPI ({{ '{:,}'.format(k.d2d_hpi) }} ราย)
+          · ไม่นับ {{ d.triage.missing }} รายที่ไม่ได้คัดกรอง
           <span class="nt">(เวลาจากการบันทึกในระบบ ไม่ใช่เวลาตรวจจริง · นับเฉพาะ 0–4 ชม. หลังเข้า ER)</span></div>
       </div>
     </section>
@@ -422,16 +423,16 @@
             <div class="p">{{ qq.refer_in_pct }}% ของผู้มา ER</div></div>
           <div class="qt {{ 'warn' if k.revisit_rate > 5 else 'ok' }}"><div class="l">กลับมา ER ซ้ำ ≤ 48 ชม.</div>
             <div class="v">{{ k.revisit }}<span class="u">ราย</span></div>
-            <div class="p">{{ k.revisit_rate }}% · เกณฑ์ ≤ 5%</div></div>
+            <div class="p">{{ k.revisit_rate }}% · เกณฑ์ ≤ 5% · ไม่นับรหัส Z / นัด / รับบริการ</div></div>
           <div class="qt {{ 'warn' if qq.ama > 0 }}"><div class="l">ปฏิเสธการรักษา / หนีกลับ</div>
             <div class="v">{{ qq.ama }}<span class="u">ราย</span></div>
             <div class="p">{{ qq.ama_pct }}% ของผู้มา ER</div></div>
           <div class="qt {{ 'warn' if k.d2d_cover < 80 else 'ok' }}"><div class="l">มีเวลาพบแพทย์</div>
             <div class="v">{{ k.d2d_cover }}<span class="u">%</span></div>
             <div class="p">{{ k.d2d_n }} ราย · เป้าหมาย ≥ 80%</div></div>
-          <div class="qt {{ 'warn' if d.triage.missing_pct > 5 else 'ok' }}"><div class="l">ลงระดับ Triage</div>
-            <div class="v">{{ (100 - d.triage.missing_pct) | round(1) }}<span class="u">%</span></div>
-            <div class="p">ยังไม่ลง {{ d.triage.missing }} ราย</div></div>
+          <div class="qt {{ 'warn' if d.triage.missing_pct > 5 else 'ok' }}"><div class="l">ไม่ได้คัดกรอง (ไม่นับ)</div>
+            <div class="v">{{ d.triage.missing }}<span class="u">ราย</span></div>
+            <div class="p">{{ d.triage.missing_pct }}% · ไม่มีระดับ/ประเภทจาก ER</div></div>
           <div class="qt {{ 'warn' if qq.no_dch_pct > 2 else 'ok' }}"><div class="l">ยังไม่ระบุการจำหน่าย</div>
             <div class="v">{{ qq.no_dch }}<span class="u">ราย</span></div>
             <div class="p">{{ qq.no_dch_pct }}% · เกณฑ์ ≤ 2%</div></div>

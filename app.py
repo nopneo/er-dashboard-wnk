@@ -6,6 +6,7 @@ production:  gunicorn -b 0.0.0.0:6200 app:app   (ออกผ่าน sub-path 
 
 import functools
 import hashlib
+import ipaddress
 import os
 import re
 import secrets
@@ -58,7 +59,7 @@ class PrefixMiddleware:
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 ICON_VERSION = "1"
 DEV_CONTACT = "นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว"
 
@@ -211,12 +212,48 @@ def _np_ok():
 #: เครื่อง reverse proxy ที่เชื่อ header IP ของผู้ใช้ได้ — คนอื่นส่ง header ปลอมมาเลี่ยงการนับรหัสผิดไม่ได้
 TRUSTED_PROXIES = {x.strip() for x in os.getenv("ER_TRUSTED_PROXIES", "127.0.0.1,::1").split(",") if x.strip()}
 
+#: ช่วง IP ของ Cloudflare (https://www.cloudflare.com/ips/) — เชื่อ CF-Connecting-IP เฉพาะคำขอที่มาจากช่วงนี้จริง
+_CF_DEFAULT = ("173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,"
+               "190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,"
+               "104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,"
+               "2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32")
+
+
+def _nets(spec):
+    out = []
+    for x in spec.split(","):
+        try:
+            out.append(ipaddress.ip_network(x.strip(), strict=False))
+        except ValueError:
+            pass
+    return out
+
+
+CF_NETS = _nets(os.getenv("ER_CF_RANGES", _CF_DEFAULT))
+
+
+def _is_cf(ip):
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(a in n for n in CF_NETS)
+
 
 def _client_ip():
-    if request.remote_addr not in TRUSTED_PROXIES:
-        return request.remote_addr
-    xff = request.headers.get("X-Forwarded-For", "")
-    return request.headers.get("CF-Connecting-IP") or (xff.split(",")[-1].strip() if xff else request.remote_addr)
+    """IP ผู้ใช้สำหรับนับรหัสผิด
+
+    ค่าท้ายสุดของ X-Forwarded-For คือเครื่องที่ต่อเข้า Apache จริง (Apache ต่อท้ายเอง ผู้ใช้ปลอมไม่ได้)
+    ถ้าเครื่องนั้นเป็น Cloudflare จึงเชื่อ CF-Connecting-IP — คนใน LAN ที่เข้า Apache ตรงส่ง CF-Connecting-IP ปลอม
+    เพื่อเปลี่ยน IP หลบการพักรหัสไม่ได้
+    """
+    peer = request.remote_addr
+    if peer not in TRUSTED_PROXIES:
+        return peer
+    xff = [x.strip() for x in request.headers.get("X-Forwarded-For", "").split(",") if x.strip()]
+    hop = xff[-1] if xff else peer
+    cf = request.headers.get("CF-Connecting-IP", "").strip()
+    return cf if cf and _is_cf(hop) else hop
 
 
 def nurse_required(view):

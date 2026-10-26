@@ -23,7 +23,7 @@ from io import BytesIO
 
 from cache import TTLCache
 from db import fetch, num
-from queries import CACHE_TTL, build_slot, DISPOSITION, LEVEL, LEVEL_COLOR, LEVEL_NAME, TH_MONTH, _pct, _thai_date, _thai_datetime
+from queries import CACHE_TTL, SCREENED, build_slot, DISPOSITION, LEVEL, LEVEL_COLOR, LEVEL_NAME, TH_MONTH, _pct, _thai_date, _thai_datetime
 
 
 def _hhmm(name, default):
@@ -112,7 +112,7 @@ def _rows(d1, d2):
                       where x.vn = e.vn and x.diagtype = '1' limit 1), o.doctor) exam
           from er_regist e join ovst o on o.vn = e.vn
             left join er_emergency_type et on et.er_emergency_type = e.er_emergency_type
-          where e.vstdate between '{d1}' and '{d2}' and e.enter_er_time is not null
+          where e.vstdate between '{d1}' and '{d2}' and e.enter_er_time is not null and {SCREENED}
             and time(e.enter_er_time) >= '{START}:00' and time(e.enter_er_time) < '{end}:00'
         ) t left join doctor ex on ex.code = t.exam
         order by t.vstdate, t.tm""")
@@ -234,7 +234,8 @@ def _build(d1, d2, key):
                full_months=len(full_m),
                nurse_l12=sum(r["lvl"] <= 2 for r in nurse),
                nurse_ar=sum(r["dch"] in (2, 3) for r in nurse),
-               l345=sum(3 <= r["lvl"] <= 5 for r in rows))
+               # เฉพาะเคสที่มีการตรวจ (พยาบาลตรวจแทนแพทย์ + แพทย์ตรวจ) ไม่นับงานบริการและไม่ระบุผู้ตรวจ
+               l345=sum(3 <= r["lvl"] <= 5 and r["g"] in ("nurse", "doctor") for r in rows))
     kpi["l345_per_day"] = round(kpi["l345"] / days, 1) if days else 0
     kpi["nurse_l12_pct"] = _pct(kpi["nurse_l12"], tot["nurse"])
     kpi["nurse_ar_pct"] = _pct(kpi["nurse_ar"], tot["nurse"])
@@ -366,8 +367,8 @@ def to_xlsx(d, hospital=""):
         ("อื่น ๆ / ไม่ระบุผู้ตรวจ (ราย)", k["other"]),
         ("พยาบาลตรวจ · ระดับ 1-2 (ราย)", k["nurse_l12"]),
         ("พยาบาลตรวจ · Admit/Refer (ราย)", k["nurse_ar"]),
-        ("ระดับ 3-5 รวมทุกผู้ตรวจ (ราย)", k["l345"]),
-        ("ระดับ 3-5 รวมทุกผู้ตรวจ เฉลี่ยต่อวัน (ราย)", k["l345_per_day"]),
+        ("ระดับ 3-5 ที่พยาบาล+แพทย์ตรวจ ไม่รวมงานบริการ (ราย)", k["l345"]),
+        ("ระดับ 3-5 ที่พยาบาล+แพทย์ตรวจ เฉลี่ยต่อวัน (ราย)", k["l345_per_day"]),
         (None, None),
         ("นิยาม", None),
         ("ช่วงเวลา", f"เวลาเข้า ER (enter_er_time) {d['start']}:00–{d['end']}:59 ทุกวัน"),
