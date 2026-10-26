@@ -174,11 +174,13 @@ def _nurse_params():
     return _range(nurse_report.MAX_DAYS, fy.replace(year=fy.year - 1))
 
 
-# ---- รหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ (มีชื่อพยาบาลรายคน) — ไม่ตั้ง ER_NP_PASS_HASH = เปิดดูได้เลย
+# ---- รหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ (มีชื่อพยาบาลรายคน)
+# ไม่ตั้ง ER_NP_PASS_HASH = ปิดหน้ารายงาน · ต้องการเปิดโดยไม่ใช้รหัส (เช่นใช้เฉพาะใน LAN) ตั้ง ER_NP_OPEN=1
 # เก็บเฉพาะ hash: python -c "from werkzeug.security import generate_password_hash as g; print(g(input(), method='pbkdf2:sha256'))"
 NP_PASS_HASH = os.getenv("ER_NP_PASS_HASH", "").strip()
 #: เปลี่ยนรหัส = tag เปลี่ยน → session เดิมใช้ไม่ได้ทันที
 _NP_TAG = hashlib.sha256(NP_PASS_HASH.encode()).hexdigest()[:16]
+NP_OPEN = not NP_PASS_HASH and os.getenv("ER_NP_OPEN") == "1"
 NP_LOGIN_HOURS = int(os.getenv("ER_NP_LOGIN_HOURS", "12"))
 NP_MAX_FAIL = 10
 NP_FAIL_WINDOW = 900
@@ -196,8 +198,10 @@ _np_token = URLSafeTimedSerializer(app.secret_key, salt="nurse-export")
 
 def _np_ok():
     """ผ่านรหัสแล้ว หรือเป็น chromium ของปุ่มส่งออกที่ถือ token อายุสั้น"""
-    if not NP_PASS_HASH or session.get("np") == _NP_TAG:
+    if NP_OPEN or (NP_PASS_HASH and session.get("np") == _NP_TAG):
         return True
+    if not NP_PASS_HASH:
+        return False
     try:
         return _np_token.loads(request.args.get("t", ""), max_age=120) == _NP_TAG
     except BadSignature:
@@ -226,8 +230,10 @@ def nurse_required(view):
 
 @app.route("/nurse/login", methods=["GET", "POST"])
 def nurse_login():
-    if not NP_PASS_HASH:
+    if NP_OPEN:
         return redirect(url_for("nurse"))
+    if not NP_PASS_HASH:            # ยังไม่ได้ตั้งรหัส — ปิดรายงานไว้ก่อน ไม่ให้ชื่อบุคลากรเปิดดูได้ทั่วไป
+        return render_template("nurse_login.html", error=None, back={}, closed=True), 403
     src = request.form if request.method == "POST" else request.args
     back = {k: v.isoformat() for k in ("d1", "d2") if (v := _parse_date(src.get(k)))}
     error = None
@@ -245,7 +251,7 @@ def nurse_login():
             _np_fail.set(ip, fails + 1)
             time.sleep(1)                      # ชะลอการเดารหัส
             error = "รหัสไม่ถูกต้อง"
-    return render_template("nurse_login.html", error=error, back=back), (401 if error else 200)
+    return render_template("nurse_login.html", error=error, back=back, closed=False), (401 if error else 200)
 
 
 @app.route("/nurse/logout")

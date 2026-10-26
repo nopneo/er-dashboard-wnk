@@ -86,7 +86,8 @@ copy .env.example .env ; notepad .env
 | `ER_MAX_DAYS` | ช่วงวันที่ยาวสุดที่ดึงได้ต่อครั้ง (ค่าเริ่มต้น 366) |
 | `ER_NP_START` / `ER_NP_END` | ช่วงเวลาของรายงานพยาบาลตรวจแทนแพทย์ (ค่าเริ่มต้น 16:00 / 20:00) |
 | `ER_NURSE_PROVIDER_TYPES` | `doctor.provider_type_code` ที่นับเป็นพยาบาล คั่นด้วยจุลภาค (ค่าเริ่มต้น 03) |
-| `ER_NP_PASS_HASH` | hash (pbkdf2) ของรหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ — ไม่ตั้ง = เปิดดูได้ไม่ต้องใส่รหัส · สร้างด้วย `python -c "from werkzeug.security import generate_password_hash as g; print(g(input(), method='pbkdf2:sha256'))"` แล้วใส่ใน `.env` ครอบด้วย `'...'` |
+| `ER_NP_PASS_HASH` | hash (pbkdf2) ของรหัสเข้าดูรายงานพยาบาลตรวจแทนแพทย์ — ไม่ตั้ง = ปิดหน้ารายงาน · สร้างด้วย `python -c "from werkzeug.security import generate_password_hash as g; print(g(input(), method='pbkdf2:sha256'))"` แล้วใส่ใน `.env` ครอบด้วย `'...'` |
+| `ER_NP_OPEN` | `1` = เปิดรายงานพยาบาลโดยไม่ใช้รหัส (เฉพาะเครื่องที่เข้าได้จาก LAN เท่านั้น) · มี `ER_NP_PASS_HASH` แล้วค่านี้ไม่มีผล |
 | `ER_SECRET_KEY` | key สำหรับ cookie เข้าระบบ (สุ่มยาว ๆ เช่น `python -c "import secrets; print(secrets.token_hex(32))"`) — ไม่ตั้งจะสร้างจาก `ER_NP_PASS_HASH` |
 | `ER_NP_LOGIN_HOURS` | อยู่ในระบบได้นานกี่ชั่วโมงหลังใส่รหัส (ค่าเริ่มต้น 12) |
 | `ER_TRUSTED_PROXIES` | IP ของ reverse proxy ที่เชื่อ header `CF-Connecting-IP` / `X-Forwarded-For` ได้ (ค่าเริ่มต้น `127.0.0.1,::1`) — ใช้นับรหัสผิดต่อ IP · ถ้า Apache อยู่คนละเครื่องให้ใส่ IP เครื่องนั้น |

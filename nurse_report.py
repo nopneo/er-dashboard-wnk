@@ -15,6 +15,7 @@
 
 import os
 import re
+import unicodedata
 from calendar import monthrange
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
@@ -60,13 +61,29 @@ _cache = TTLCache(maxsize=16)
 TITLES = {"นาย", "นาง", "นางสาว", "น.ส.", "ว่าที่", "พว.", "พย.", "พยาบาลวิชาชีพ"}
 
 
-def _no_surname(name):
-    """ตัดนามสกุลออก เหลือคำนำหน้า + ชื่อ — รายงานนี้ไม่แสดงนามสกุลบุคลากร (หน้าเว็บ, Excel, ไฟล์ส่งออก)"""
+#: จำนวนตัวอักษรต้นนามสกุลที่แสดง (ไม่นับสระ/วรรณยุกต์บนล่าง)
+SURNAME_SHOW = 2
+
+
+def _mask_surname(name):
+    """คำนำหน้า + ชื่อ + นามสกุลบางส่วน เช่น "นางสาวสมศรี ใจดี" → "นางสาวสมศรี ใจxxx"
+    ใช้ทั้งหน้าเว็บ, Excel และไฟล์ส่งออก — นามสกุลเต็มไม่ออกจากฟังก์ชันนี้ (นามสกุลสั้นแสดงน้อยลง ไม่ครบคำ)"""
     p = name.split()
     i = 0
     while i < len(p) - 1 and (p[i] in TITLES or p[i].endswith(".")):
         i += 1
-    return " ".join(p[:i + 1])
+    first, surname = " ".join(p[:i + 1]), "".join(p[i + 1:])
+    if not surname:
+        return first
+    show = min(SURNAME_SHOW, sum(unicodedata.category(c) != "Mn" for c in surname) - 1)
+    keep, base = "", 0
+    for ch in surname:
+        if unicodedata.category(ch) != "Mn":      # สระ/วรรณยุกต์บนล่างติดไปกับตัวหน้า
+            if base == show:
+                break
+            base += 1
+        keep += ch
+    return f"{first} {keep}xxx"
 
 
 def _fy(d):
@@ -158,7 +175,7 @@ def _build(d1, d2, key):
     for r in _rows(d1, d2):
         r = {"d": date.fromisoformat(str(r["vstdate"])[:10]), "tm": str(r["tm"]), "pt": int(num(r["pt"])),
              "lvl": int(num(r["lvl"], 5)), "dch": int(num(r["dch"])), "pdx": r["pdx"] or "",
-             "ex": r["ex"], "exc": r["exc"] or "", "exn": _no_surname(r["exn"] or "")}
+             "ex": r["ex"], "exc": r["exc"] or "", "exn": _mask_surname(r["exn"] or "")}
         r["g"] = _group(r)
         rows.append(r)
     nurse = [r for r in rows if r["g"] == "nurse"]
