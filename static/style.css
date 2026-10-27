@@ -473,3 +473,43 @@ table.t.alerts .wm { display: none; }
 .print-mode .hero .name { font-size: 54px; }
 .print-mode table.t.alerts .w { display: table-cell; }
 .print-mode table.t.alerts .wm { display: none; }
+
+/* ---------------------------------------------------- ตรวจข้อมูลก่อนใช้ (/check) + แถบเตือน */
+.audit-bar { width: 100%; max-width: 1600px; margin: 10px auto 0; padding: 0 30px; }
+.audit-bar > div { background: #fff4e5; border: 1.5px solid #f5c27a; color: #5c3200; border-radius: 14px;
+                   padding: 9px 16px; font-size: 15px; line-height: 1.5; }
+.audit-bar a { color: var(--red-d); font-weight: 600; }
+.print-mode .audit-bar { display: none; }
+@media print { .audit-bar { display: none; } }
+
+.ck-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+.ck-back { font-family: 'Kanit'; font-weight: 600; color: var(--red-d); text-decoration: none; padding: 7px 14px;
+           border: 1.5px solid #f3c9c9; border-radius: 12px; background: #fff; }
+.ck-ttl { font-family: 'Kanit'; font-weight: 600; font-size: 28px; color: var(--maroon); line-height: 1.2; }
+.ck-sub { color: var(--muted); font-size: 15px; }
+.ck-form { padding: 0; margin: 12px 0 14px; max-width: none; }
+.ck-page .block { margin-top: 16px; }
+.ck-tw { overflow-x: auto; max-width: 100%; }
+table.t.ck { min-width: 720px; }
+table.t.ck td { height: auto; padding: 7px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+table.t.ck th { text-align: left; padding: 8px 10px; }
+table.t.ck td small { color: var(--muted); }
+table.t.ck tr.ck-warn td { background: #fff4e5; }
+.ck-note { font-size: 13.5px; color: var(--muted); margin: 8px 2px 0; }
+.ck-err { background: #fee2e2; color: #b91c1c; border-radius: 12px; padding: 8px 12px; margin: 8px 0; }
+.ck-h3 { font-family: 'Kanit'; font-weight: 600; font-size: 18px; color: var(--maroon); margin: 16px 0 8px; }
+.audit-sum { border-radius: 16px; padding: 14px 18px; margin: 0 0 6px; font-size: 15px; }
+.audit-sum.bad { background: #fff4e5; border: 1.5px solid #f5c27a; color: #5c3200; }
+.audit-sum.good { background: #e9f7ef; border: 1.5px solid #9fd8b8; color: #145c3a; }
+.audit-sum .h { font-family: 'Kanit'; font-weight: 600; font-size: 19px; margin-bottom: 4px; }
+.audit-sum ul { margin: 4px 0 8px 22px; }
+.audit-sum li { margin: 2px 0; overflow-wrap: anywhere; }
+.audit-sum .note { font-size: 13.5px; opacity: .85; margin: 6px 0; }
+.audit-sum button { font: 600 15px 'Kanit'; cursor: pointer; border-radius: 10px; padding: 5px 14px; margin: 4px 0;
+                    border: 1.5px solid var(--green); background: #fff; color: #047857; }
+.audit-sum button:hover { background: var(--green); color: #fff; }
+@media (max-width: 700px) {
+  .ck-page .sheet { padding: 16px 16px 20px; }
+  .audit-bar { padding: 0 16px; }
+  .ck-ttl { font-size: 22px; }
+}

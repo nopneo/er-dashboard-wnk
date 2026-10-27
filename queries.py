@@ -6,8 +6,12 @@
   - ผู้ป่วย ER = er_regist ที่มี enter_er_time · เวรนับจากเวลาเข้า ER
       00:00–08:00 ดึก (D) · 08:01–16:00 เช้า (C) · 16:01–23:59 บ่าย (B)
   - ระดับ = er_emergency_level_id ถ้าว่างใช้ er_emergency_type.export_code
-  - Trauma = มีรหัส ICD-10 กลุ่ม S/T · จราจร = กลุ่ม V · รับบริการ = er_pt_type 4
-  - EMS = ovst.ovstist 04 (ALS) / 06 (FR)
+  - Trauma = มีรหัส ICD-10 กลุ่ม S/T · จราจร = กลุ่ม V · รับบริการ = er_pt_type 4 (ER_SVC_PT_TYPES)
+  - EMS = ovst.ovstist 04 (ALS) / 06 (FR) (ER_EMS_ALS_CODES / ER_EMS_FR_CODES)
+
+รหัสของ HOSxP ที่แต่ละโรงพยาบาลตั้งไม่เหมือนกัน (ovstist, er_dch_type, er_pt_type, diagtype, แผนก)
+ตั้งได้ด้วย env ER_* (ค่าเริ่มต้น = รหัสมาตรฐานของ HOSxP) ส่งเข้า SQL เป็นพารามิเตอร์ P ทุกคำสั่ง
+— จึงต้องเขียน % ที่เป็นตัวอักษรใน SQL เป็น %% · ตรวจว่าตรงกับข้อมูลจริงที่หน้า /check (check.py)
 
 เวลาที่ใช้ได้จริงของ รพ.วังน้ำเขียว (ตรวจข้อมูล พ.ค.–ต.ค. 2569):
   - er_regist.doctor_tx_time / finish_time เป็นค่าตั้งต้น (+5 / +10 นาทีทุกราย) ใช้วัดไม่ได้
@@ -32,6 +36,53 @@ SHIFTS = {"all": "ทุกเวร", "D": "เวรดึก", "C": "เว�
 SHIFT_TIME = {"D": "00:00–08:00", "C": "08:01–16:00", "B": "16:01–23:59"}
 
 
+# ------------------------------------------------- รหัสของ HOSxP (ตั้งได้ด้วย env)
+
+_CODE_RE = re.compile(r"[0-9A-Za-z]{1,5}")
+#: env ที่รูปแบบผิด (ใช้ค่าเริ่มต้นแทน) — แสดงที่หน้า /check
+CODE_ERRORS = []
+
+
+def _codes(name, default, ints=False):
+    """รหัสคั่นด้วยจุลภาคจาก env → tuple (รับเฉพาะตัวอักษร/ตัวเลข ไม่เกิน 5 ตัว)"""
+    raw = os.getenv(name, "").strip()
+    items = [c.strip() for c in (raw or default).split(",") if c.strip()]
+    ok = [c for c in items if _CODE_RE.fullmatch(c) and (c.isdigit() or not ints)]
+    if raw and len(ok) != len(items):
+        CODE_ERRORS.append(f"{name}={raw}")
+    return tuple(dict.fromkeys(int(c) if ints else c for c in (ok or default.split(","))))
+
+
+#: ovst.ovstist — ประเภทการมา
+WALKIN_CODES = _codes("ER_WALKIN_CODES", "01,05")          # ลงทะเบียนเอง / Kiosk
+APPT_CODES = _codes("ER_APPT_CODES", "02")                 # มาตามนัด
+REFER_IN_CODES = _codes("ER_REFER_IN_CODES", "03")         # รับส่งต่อ
+EMS_ALS_CODES = _codes("ER_EMS_ALS_CODES", "04")
+EMS_FR_CODES = _codes("ER_EMS_FR_CODES", "06")
+#: ovstdiag.diagtype ของโรคหลัก (principal diagnosis)
+PDX_DIAGTYPE = _codes("ER_PDX_DIAGTYPE", "1")[0]
+#: er_regist.er_pt_type — รับบริการอื่น ๆ (ทำแผล ฉีดยา) · ชันสูตรศพ (รายงานพยาบาลนับเป็นงานบริการ)
+SVC_PT_TYPES = _codes("ER_SVC_PT_TYPES", "4", ints=True)
+AUTOPSY_PT_TYPES = _codes("ER_AUTOPSY_PT_TYPES", "6", ints=True)
+#: er_regist.er_dch_type — การจำหน่ายจาก ER · เสียชีวิต (4, 6) รวมใน "อื่น ๆ"
+DCH = {k: _codes(f"ER_DCH_{k.upper()}", d, ints=True) for k, d in (
+    ("home", "1"), ("admit", "3"), ("refer", "2"), ("obs", "5"), ("refuse", "7"), ("escape", "8"))}
+
+#: รหัสแผนก ER ของ HOSxP · 999 = สถานะ "กลับบ้าน" ไม่ใช่แผนก
+ER_DEPCODE = _codes("ER_DEPCODE", "011")[0]
+NOT_DEPT = _codes("ER_NOT_DEPCODES", "999")
+
+#: พารามิเตอร์ของทุกคำสั่ง SQL ในโมดูลนี้ (และรายงานพยาบาล)
+P = {
+    "walkin": WALKIN_CODES, "appt": APPT_CODES, "refer_in": REFER_IN_CODES,
+    "ems_als": EMS_ALS_CODES, "ems_fr": EMS_FR_CODES, "ems": EMS_ALS_CODES + EMS_FR_CODES,
+    "pdx": PDX_DIAGTYPE, "svc": SVC_PT_TYPES,
+    **{f"dch_{k}": v for k, v in DCH.items()},
+    "dch_ar": DCH["refer"] + DCH["admit"], "dch_ama": DCH["refuse"] + DCH["escape"],
+    "er_dep": ER_DEPCODE, "not_dep": (ER_DEPCODE,) + NOT_DEPT,
+}
+
+
 def _shift_case(col):
     return (f"case when time({col}) < '08:01:00' then 'D' "
             f"when time({col}) < '16:01:00' then 'C' else 'B' end")
@@ -40,7 +91,7 @@ def _shift_case(col):
 SHIFT_CASE = _shift_case("e.enter_er_time")
 LEVEL = "coalesce(e.er_emergency_level_id, least(et.export_code, 5), 5)"
 TRAUMA = "exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 regexp '^[STV]')"
-SVC = "ifnull(e.er_pt_type, 0) = 4"
+SVC = "ifnull(e.er_pt_type, 0) in %(svc)s"
 
 FROM = ("from er_regist e join ovst o on o.vn = e.vn "
         "left join er_emergency_type et on et.er_emergency_type = e.er_emergency_type ")
@@ -83,17 +134,17 @@ SCREENED = "e.er_emergency_level_id is not null and e.er_pt_type is not null"
 
 
 def _no_z(alias):
-    return (f"not exists(select 1 from ovstdiag z where z.vn = {alias}.vn and z.diagtype = '1' "
-            f"and z.icd10 like 'Z%')")
+    return (f"not exists(select 1 from ovstdiag z where z.vn = {alias}.vn and z.diagtype = %(pdx)s "
+            f"and z.icd10 like 'Z%%')")
 
 
 #: visit ที่นับในอัตรากลับมาซ้ำ — ไม่นับรับบริการ (er_pt_type 4), มาตามนัด (ovstist 02) และโรคหลักรหัส Z
 #: (ทำแผล ตัดไหม ฉีดยา วัคซีน ติดตามอาการ) ทั้งครั้งนี้และครั้งก่อน
-ELIG = f"(not {SVC} and ifnull(o.ovstist, '') <> '02' and {_no_z('e')})"
+ELIG = f"(not {SVC} and ifnull(o.ovstist, '') not in %(appt)s and {_no_z('e')})"
 #: กลับมา ER ซ้ำภายใน 48 ชม. หลัง ER visit ก่อนหน้าที่เข้าเกณฑ์เดียวกัน
 REVISIT = ("exists(select 1 from ovst po join er_regist p on p.vn = po.vn "
-           "where po.hn = o.hn and p.vn <> e.vn and ifnull(p.er_pt_type, 0) <> 4 "
-           "and p.er_emergency_level_id is not null and ifnull(po.ovstist, '') <> '02' "
+           "where po.hn = o.hn and p.vn <> e.vn and ifnull(p.er_pt_type, 0) not in %(svc)s "
+           "and p.er_emergency_level_id is not null and ifnull(po.ovstist, '') not in %(appt)s "
            f"and {_no_z('p')} "
            "and po.vstdate between e.vstdate - interval 2 day and e.vstdate "
            "and p.enter_er_time < e.enter_er_time "
@@ -113,7 +164,7 @@ _HPI_RE = re.compile(
     _HPI_KW + r"[^0-9]{0,30}?" + _HPI_T                                  # รายงานแพทย์ at 09.15
     + r"|" + _HPI_T + r"(?:\s*[,/]\s*" + _HPI_T + r")*\s*(?:น\.?)?[^0-9]{0,20}?" + _HPI_KW)   # 13.46, 14.00 น. รายงานแพทย์
 _HPI_TIME = re.compile(r"([01]?\d|2[0-3])\s*[.:]\s*([0-5]\d)")
-_HPI_LIKE = f"(sc.hpi like concat('%', {_th('แพทย์')}, '%') or sc.hpi like '%onsult%')"
+_HPI_LIKE = f"(sc.hpi like concat('%%', {_th('แพทย์')}, '%%') or sc.hpi like '%%onsult%%')"
 
 
 def hpi_minutes(enter, hpi):
@@ -189,7 +240,7 @@ def _visits(d1, d2, shift):
               e.enter_er_time t,
               case when {_HPI_LIKE} then replace(replace(replace(sc.hpi, char(13), ' '), char(10), ' '),
                                                  char(9), ' ') end hpi
-            {FROM_ST} left join opdscreen sc on sc.vn = e.vn {_where(d1, d2, shift)}"""):
+            {FROM_ST} left join opdscreen sc on sc.vn = e.vn {_where(d1, d2, shift)}""", P):
             d = r["d2d"]
             d = None if d is None or d == "" else num(d)
             h = hpi_minutes(_dt(r["t"]), r["hpi"]) if r.get("hpi") else None
@@ -205,7 +256,7 @@ def _kpi_raw(d1, d2, shift):
     v = _visits(d1, d2, shift)
     d2d = [x["d2d"] for x in v if x["d2d"] is not None]
     return {"n": len(v), "l1": sum(x["lvl"] == 1 for x in v), "l2": sum(x["lvl"] == 2 for x in v),
-            "admit": sum(x["dch"] == 3 for x in v), "refer": sum(x["dch"] == 2 for x in v),
+            "admit": sum(x["dch"] in DCH["admit"] for x in v), "refer": sum(x["dch"] in DCH["refer"] for x in v),
             "d2d": sum(d2d) / len(d2d) if d2d else 0, "d2d_n": len(d2d),
             "d2d_hpi": sum(x["hpi"] for x in v),
             "nelig": sum(x["elig"] for x in v), "rv": sum(x["elig"] and x["rv"] for x in v)}
@@ -242,9 +293,9 @@ def visit_trend(d2, shift, months=9):
         start = (start - timedelta(days=1)).replace(day=1)
     last = (end + timedelta(days=31)).replace(day=1) - timedelta(days=1)
     rows = fetch(f"""
-        select date_format(e.vstdate, '%Y-%m') ym, count(*) n, sum({TRAUMA}) tr,
-               sum(e.er_dch_type = 3) admit
-        {FROM} {_where(start.isoformat(), last.isoformat(), shift)} group by ym""")
+        select date_format(e.vstdate, '%%Y-%%m') ym, count(*) n, sum({TRAUMA}) tr,
+               sum(e.er_dch_type in %(dch_admit)s) admit
+        {FROM} {_where(start.isoformat(), last.isoformat(), shift)} group by ym""", P)
     by = {r["ym"]: r for r in rows}
     out, cur = [], start
     for _ in range(months):
@@ -267,7 +318,7 @@ def triage(d1, d2, shift):
         times = [x["d2d"] for x in g if x["d2d"] is not None]
         n, d2d_n = len(g), len(times)
         d2d = round(sum(times) / d2d_n, 1) if d2d_n else None
-        r = {"ar": sum(x["dch"] in (2, 3) for x in g)}
+        r = {"ar": sum(x["dch"] in P["dch_ar"] for x in g)}
         tgt = D2D_TARGET[lv]
         status = ("flat" if d2d is None else "good" if d2d <= tgt
                   else "watch" if d2d <= tgt * 1.5 else "bad")
@@ -277,25 +328,25 @@ def triage(d1, d2, shift):
                       "ar_pct": _pct(num(r.get("ar")), n)})
     # ลงทะเบียน ER แต่ไม่ได้คัดกรอง — ไม่นับในทุกบล็อก แสดงจำนวนไว้ให้รู้ว่าตัดออกไปเท่าไร
     missing = num(fetch_one(f"select count(*) c from er_regist e {_where(d1, d2, shift, screened=False)} "
-                            f"and not ({SCREENED})").get("c"))
+                            f"and not ({SCREENED})", P).get("c"))
     return {"total": total, "items": items, "missing": missing, "missing_pct": _pct(missing, total + missing)}
 
 
 # ------------------------------------------------------ 4. Disposition
 
-#: er_dch_type ของ HOSxP — เสียชีวิต (4, 6) รวมใน "อื่น ๆ" ตามที่ตกลงไว้ว่าไม่แสดงบนแดชบอร์ด
+#: er_dch_type ของ HOSxP (รหัสตาม DCH) — เสียชีวิต (4, 6) รวมใน "อื่น ๆ" ตามที่ตกลงไว้ว่าไม่แสดงบนแดชบอร์ด
 DISPOSITION = [
-    ("home", "กลับบ้าน", (1,), "#22a06b"),
-    ("admit", "Admit", (3,), "#ef4444"),
-    ("refer", "ส่งต่อ (Refer)", (2,), "#3b82f6"),
-    ("obs", "สังเกตอาการ", (5,), "#f59e0b"),
-    ("refuse", "ปฏิเสธการรักษา", (7,), "#8b5cf6"),
-    ("escape", "หนีกลับ", (8,), "#ec4899"),
+    ("home", "กลับบ้าน", DCH["home"], "#22a06b"),
+    ("admit", "Admit", DCH["admit"], "#ef4444"),
+    ("refer", "ส่งต่อ (Refer)", DCH["refer"], "#3b82f6"),
+    ("obs", "สังเกตอาการ", DCH["obs"], "#f59e0b"),
+    ("refuse", "ปฏิเสธการรักษา", DCH["refuse"], "#8b5cf6"),
+    ("escape", "หนีกลับ", DCH["escape"], "#ec4899"),
 ]
 
 
 def disposition(d1, d2, shift):
-    rows = fetch(f"select e.er_dch_type t, count(*) n from er_regist e {_where(d1, d2, shift)} group by t")
+    rows = fetch(f"select e.er_dch_type t, count(*) n from er_regist e {_where(d1, d2, shift)} group by t", P)
     by = {int(num(r["t"], -1)): num(r["n"]) for r in rows}
     total = sum(by.values())
     items = []
@@ -315,10 +366,10 @@ def case_type(d1, d2, shift):
     r = fetch_one(f"""
         select count(*) n,
           sum({SVC}) svc,
-          sum(not {SVC} and exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 like 'V%')) traf,
-          sum(not {SVC} and not exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 like 'V%')
+          sum(not {SVC} and exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 like 'V%%')) traf,
+          sum(not {SVC} and not exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 like 'V%%')
               and exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 regexp '^[ST]')) tr
-        from er_regist e {_where(d1, d2, shift)}""")
+        from er_regist e {_where(d1, d2, shift)}""", P)
     n = num(r.get("n"))
     svc, traf, tr = num(r.get("svc")), num(r.get("traf")), num(r.get("tr"))
     items = [("Non-trauma", n - svc - traf - tr, "#ef4444"),
@@ -333,7 +384,7 @@ def case_type(d1, d2, shift):
 
 def arrivals_by_hour(d1, d2, shift):
     rows = fetch(f"select hour(e.enter_er_time) h, count(*) n from er_regist e "
-                 f"{_where(d1, d2, shift)} group by h")
+                 f"{_where(d1, d2, shift)} group by h", P)
     by = {int(num(r["h"])): num(r["n"]) for r in rows}
     days = _days(d1, d2)
     hours = []
@@ -351,9 +402,9 @@ def shift_load(d1, d2):
     """ทุกเวรเสมอ (ไม่ขึ้นกับตัวกรองเวร) · admit/refer นับตามเวลาเข้า ER"""
     rows = fetch(f"""
         select {SHIFT_CASE} sh, count(*) n, sum({LEVEL} <= 2) l12, sum({TRAUMA}) tr,
-               sum(e.er_dch_type = 3) admit, sum(e.er_dch_type = 2) refer,
-               sum(o.ovstist in ('04', '06')) ems
-        {FROM} {_where(d1, d2, 'all')} group by sh""")
+               sum(e.er_dch_type in %(dch_admit)s) admit, sum(e.er_dch_type in %(dch_refer)s) refer,
+               sum(o.ovstist in %(ems)s) ems
+        {FROM} {_where(d1, d2, 'all')} group by sh""", P)
     by = {r["sh"]: r for r in rows}
     days = _days(d1, d2)
     out = []
@@ -377,14 +428,15 @@ def time_to_disposition(d1, d2, shift):
     a = fetch_one(f"""
         select count(*) n, avg(m) m, sum(m > {BOARDING_MIN}) over_n from (
           select timestampdiff(minute, e.enter_er_time, timestamp(i.regdate, i.regtime)) m
-          from er_regist e join ipt i on i.vn = e.vn {w} and e.er_dch_type = 3 and i.regtime is not null
-        ) x where m between 0 and 1440""")
+          from er_regist e join ipt i on i.vn = e.vn {w} and e.er_dch_type in %(dch_admit)s
+            and i.regtime is not null
+        ) x where m between 0 and 1440""", P)
     r = fetch_one(f"""
         select count(*) n, avg(m) m, sum(m > {BOARDING_MIN}) over_n from (
           select timestampdiff(minute, e.enter_er_time,
                  (select min(timestamp(r.refer_date, r.refer_time)) from referout r where r.vn = e.vn)) m
-          from er_regist e {w} and e.er_dch_type = 2
-        ) x where m between 0 and 1440""")
+          from er_regist e {w} and e.er_dch_type in %(dch_refer)s
+        ) x where m between 0 and 1440""", P)
 
     def pack(x):
         n = num(x.get("n"))
@@ -395,15 +447,16 @@ def time_to_disposition(d1, d2, shift):
 
 # ------------------------------------------------- 9. โปรไฟล์ผู้ป่วย ER
 
-ARRIVAL = [("ลงทะเบียนเอง / Kiosk", ("01", "05"), "#ef4444"),
-           ("EMS (ALS / FR)", ("04", "06"), "#f59e0b"),
-           ("มาตามนัด", ("02",), "#3b82f6"),
-           ("รับส่งต่อ (Refer in)", ("03",), "#8b5cf6")]
+#: กลุ่มของ ovst.ovstist ในบล็อกโปรไฟล์ — รหัสอื่นรวมเป็น "อื่น ๆ"
+ARRIVAL = [("ลงทะเบียนเอง / Kiosk", WALKIN_CODES, "#ef4444"),
+           ("EMS (ALS / FR)", EMS_ALS_CODES + EMS_FR_CODES, "#f59e0b"),
+           ("มาตามนัด", APPT_CODES, "#3b82f6"),
+           ("รับส่งต่อ (Refer in)", REFER_IN_CODES, "#8b5cf6")]
 
 
 def patient_profile(d1, d2, shift):
     w = _where(d1, d2, shift)
-    rows = fetch(f"select o.ovstist t, count(*) n {FROM} {w} group by t")
+    rows = fetch(f"select o.ovstist t, count(*) n {FROM} {w} group by t", P)
     by = {r["t"]: num(r["n"]) for r in rows}
     total = sum(by.values())
     arrival = []
@@ -421,7 +474,7 @@ def patient_profile(d1, d2, shift):
           sum(timestampdiff(year, pt.birthday, e.vstdate) between 41 and 60) a3,
           sum(timestampdiff(year, pt.birthday, e.vstdate) between 61 and 80) a4,
           sum(timestampdiff(year, pt.birthday, e.vstdate) > 80) a5
-        {FROM} join patient pt on pt.hn = o.hn {w} and pt.birthday is not null""")
+        {FROM} join patient pt on pt.hn = o.hn {w} and pt.birthday is not null""", P)
     a_total = num(ages.get("total"))
     age_items = [{"label": l, "value": num(ages.get(k)), "color": c} for l, k, c in (
         ("0-14 ปี", "a1", "#22a06b"), ("15-40 ปี", "a2", "#3b82f6"), ("41-60 ปี", "a3", "#8b5cf6"),
@@ -432,11 +485,11 @@ def patient_profile(d1, d2, shift):
     dx = fetch(f"""
         select d.icd10, ifnull(nullif(c.tname, ''), ifnull(c.name, d.icd10)) name, count(*) cnt
         from er_regist e join ovst o on o.vn = e.vn
-             join ovstdiag d on d.vn = e.vn and d.diagtype = '1'
+             join ovstdiag d on d.vn = e.vn and d.diagtype = %(pdx)s
              left join icd101 c on c.code = d.icd10
              left join er_emergency_type et on et.er_emergency_type = e.er_emergency_type
         {w} and not {SVC}
-        group by d.icd10, name order by cnt desc limit 5""")
+        group by d.icd10, name order by cnt desc limit 5""", P)
     dx_items = [{"label": r["name"], "code": r["icd10"], "value": num(r["cnt"])} for r in dx]
     top = max((i["value"] for i in dx_items), default=1) or 1
     for it in dx_items:
@@ -449,12 +502,14 @@ def patient_profile(d1, d2, shift):
 def quality(d1, d2, shift):
     r = fetch_one(f"""
         select count(*) n,
-          sum(o.ovstist = '04') ems_als, sum(o.ovstist = '06') ems_fr, sum(o.ovstist = '03') refer_in,
-          sum(e.er_dch_type in (7, 8)) ama, sum(e.er_dch_type = 7) refuse, sum(e.er_dch_type = 8) escape,
-          sum(not exists(select 1 from ovstdiag d where d.vn = e.vn and d.diagtype = '1')) no_pdx,
+          sum(o.ovstist in %(ems_als)s) ems_als, sum(o.ovstist in %(ems_fr)s) ems_fr,
+          sum(o.ovstist in %(refer_in)s) refer_in,
+          sum(e.er_dch_type in %(dch_ama)s) ama, sum(e.er_dch_type in %(dch_refuse)s) refuse,
+          sum(e.er_dch_type in %(dch_escape)s) escape,
+          sum(not exists(select 1 from ovstdiag d where d.vn = e.vn and d.diagtype = %(pdx)s)) no_pdx,
           sum(e.er_dch_type is null) no_dch,
-          sum({LEVEL} = 1 and e.er_dch_type in (2, 3)) l1_ar, sum({LEVEL} = 1) l1
-        {FROM} {_where(d1, d2, shift)}""")
+          sum({LEVEL} = 1 and e.er_dch_type in %(dch_ar)s) l1_ar, sum({LEVEL} = 1) l1
+        {FROM} {_where(d1, d2, shift)}""", P)
     n = num(r.get("n"))
     v = {k: num(x) for k, x in r.items()}
     return {
@@ -475,8 +530,8 @@ def refer_destinations(d1, d2, shift, limit=5):
         select r.refer_hospcode hc, h.name, count(distinct e.vn) n
         from er_regist e join referout r on r.vn = e.vn
              left join hospcode h on h.hospcode = r.refer_hospcode
-        {_where(d1, d2, shift)} and e.er_dch_type = 2
-        group by r.refer_hospcode, h.name order by n desc""")
+        {_where(d1, d2, shift)} and e.er_dch_type in %(dch_refer)s
+        group by r.refer_hospcode, h.name order by n desc""", P)
     items = [{"label": x["name"] or x["hc"] or "ไม่ระบุ", "code": x["hc"] or "-", "value": num(x["n"])}
              for x in rows]
     total = sum(i["value"] for i in items)
@@ -502,16 +557,17 @@ def _rank(rows, total, limit):
     return {"items": items[:limit], "total": total}
 
 
-def top_dx_by_dch(d1, d2, shift, dch_type, limit=10):
-    """โรคหลัก (pdx ที่ ER ลง) ของผู้ป่วยที่จำหน่ายจาก ER ด้วย er_dch_type นั้น"""
-    w = _where(d1, d2, shift)
+def top_dx_by_dch(d1, d2, shift, dch, limit=10):
+    """โรคหลัก (pdx ที่ ER ลง) ของผู้ป่วยที่จำหน่ายจาก ER แบบนั้น (dch = "refer" / "admit")"""
+    key = "dch_refer" if dch == "refer" else "dch_admit"
+    w = f"{_where(d1, d2, shift)} and e.er_dch_type in %({key})s"
     rows = fetch(f"""
         select d.icd10 code, ifnull(nullif(c.tname, ''), c.name) name, count(distinct e.vn) n
-        from er_regist e join ovstdiag d on d.vn = e.vn and d.diagtype = '1'
+        from er_regist e join ovstdiag d on d.vn = e.vn and d.diagtype = %(pdx)s
              left join icd101 c on c.code = d.icd10
-        {w} and e.er_dch_type = {int(dch_type)}
-        group by d.icd10, name order by n desc limit {int(limit)}""")
-    total = num(fetch_one(f"select count(*) c from er_regist e {w} and e.er_dch_type = {int(dch_type)}").get("c"))
+        {w}
+        group by d.icd10, name order by n desc limit {int(limit)}""", P)
+    total = num(fetch_one(f"select count(*) c from er_regist e {w}", P).get("c"))
     return _rank(rows, total, limit)
 
 
@@ -519,39 +575,30 @@ def injury_causes(d1, d2, shift, limit=10):
     """สาเหตุภายนอก (ICD-10 V01-Y98 ระดับ 3 หลัก) ของผู้บาดเจ็บ
     ไม่นับมารับบริการ/ติดตาม (er_pt_type 4 หรือโรคหลักเป็นรหัส Z เช่น มาฉีดวัคซีนพิษสุนัขบ้าเข็มถัดไป)"""
     base = (f"{_where(d1, d2, shift)} and not {SVC} and not exists(select 1 from ovstdiag p "
-            "where p.vn = e.vn and p.diagtype = '1' and p.icd10 like 'Z%')")
+            "where p.vn = e.vn and p.diagtype = %(pdx)s and p.icd10 like 'Z%%')")
     rows = fetch(f"""
         select left(d.icd10, 3) code, ifnull(nullif(c.tname, ''), c.name) name, count(distinct e.vn) n
         from er_regist e join ovstdiag d on d.vn = e.vn and d.icd10 regexp '^[V-Y]'
              left join icd101 c on c.code = left(d.icd10, 3)
         {base}
-        group by code, name order by n desc limit {int(limit)}""")
+        group by code, name order by n desc limit {int(limit)}""", P)
     total = num(fetch_one(f"""
         select count(*) c from er_regist e {base}
-          and exists(select 1 from ovstdiag d where d.vn = e.vn and d.icd10 regexp '^[V-Y]')""").get("c"))
+          and exists(select 1 from ovstdiag d where d.vn = e.vn and d.icd10 regexp '^[V-Y]')""", P).get("c"))
     return _rank(rows, total, limit)
 
 
 # ------------------------------------------------- 16. ส่งมาจาก OPD / แผนกอื่น
 
-#: รหัสแผนก ER ของ HOSxP · 999 = สถานะ "กลับบ้าน" ไม่ใช่แผนก
-_DEP_RE = re.compile(r"[0-9A-Za-z]{1,5}")
-ER_DEPCODE = os.getenv("ER_DEPCODE", "011")
-ER_DEPCODE = ER_DEPCODE if _DEP_RE.fullmatch(ER_DEPCODE) else "011"
-NOT_DEPT = tuple(c for c in (x.strip() for x in os.getenv("ER_NOT_DEPCODES", "999").split(","))
-                 if _DEP_RE.fullmatch(c))
-
-
 def from_opd(d1, d2, shift, limit=5):
     """visit ที่ลงทะเบียนครั้งแรกที่แผนกอื่น (ovst.main_dep) แล้วส่งมา ER"""
-    excl = ", ".join(f"'{c}'" for c in (ER_DEPCODE,) + NOT_DEPT)
     rows = fetch(f"""
         select o.main_dep dep, k.department name, count(*) n, sum({LEVEL} <= 2) l12,
-               sum(e.er_dch_type in (2, 3)) ar
+               sum(e.er_dch_type in %(dch_ar)s) ar
         {FROM} left join kskdepartment k on k.depcode = o.main_dep
-        {_where(d1, d2, shift)} and o.main_dep is not null and o.main_dep not in ({excl})
-        group by o.main_dep, k.department order by n desc""")
-    total = num(fetch_one(f"select count(*) c from er_regist e {_where(d1, d2, shift)}").get("c"))
+        {_where(d1, d2, shift)} and o.main_dep is not null and o.main_dep not in %(not_dep)s
+        group by o.main_dep, k.department order by n desc""", P)
+    total = num(fetch_one(f"select count(*) c from er_regist e {_where(d1, d2, shift)}", P).get("c"))
     n = sum(num(r["n"]) for r in rows)
     items = [{"label": r["name"] or r["dep"], "code": r["dep"], "value": num(r["n"])} for r in rows[:limit]]
     if len(rows) > limit:
@@ -575,14 +622,15 @@ def red_over(d1, d2, shift):
     ใช้เวลา admit/refer ซึ่งบันทึกจริง (ไม่ใช่เวลากดเริ่มตรวจ)"""
     r = fetch_one(f"""
         select count(*) n, sum(m > {RED_MAX_MIN}) over_n, avg(m) avg_m, max(m) max_m,
-               sum(dch = 3 and m > {RED_MAX_MIN}) over_admit, sum(dch = 2 and m > {RED_MAX_MIN}) over_refer
+               sum(dch in %(dch_admit)s and m > {RED_MAX_MIN}) over_admit,
+               sum(dch in %(dch_refer)s and m > {RED_MAX_MIN}) over_refer
         from (select e.er_dch_type dch,
-                case when e.er_dch_type = 3 then timestampdiff(minute, e.enter_er_time,
+                case when e.er_dch_type in %(dch_admit)s then timestampdiff(minute, e.enter_er_time,
                        (select min(timestamp(i.regdate, i.regtime)) from ipt i where i.vn = e.vn))
                      else timestampdiff(minute, e.enter_er_time,
                        (select min(timestamp(x.refer_date, x.refer_time)) from referout x where x.vn = e.vn)) end m
-              {FROM} {_where(d1, d2, shift)} and {LEVEL} = 1 and e.er_dch_type in (2, 3)) t
-        where m between 0 and 1440""")
+              {FROM} {_where(d1, d2, shift)} and {LEVEL} = 1 and e.er_dch_type in %(dch_ar)s) t
+        where m between 0 and 1440""", P)
     n, over = num(r.get("n")), num(r.get("over_n"))
     return {"n": n, "over": over, "pct": _pct(over, n), "avg": round(num(r.get("avg_m"))),
             "max": num(r.get("max_m")), "over_admit": num(r.get("over_admit")),
@@ -596,7 +644,7 @@ MCI_WINDOW = int(os.getenv("ER_MCI_WINDOW", "60"))
 #: กลุ่มสาเหตุภายนอก — ผู้บาดเจ็บกลุ่มเดียวกันมาพร้อมกันจึงนับเป็นเหตุเดียว ("อื่น ๆ" ปนหลายสาเหตุ ไม่นับ)
 MCI_GROUPS = {"traf": "อุบัติเหตุจราจร", "animal": "สัตว์/แมลงกัดต่อย", "assault": "ถูกทำร้ายร่างกาย",
               "poison": "สารพิษ", "burn": "ไฟไหม้/ความร้อน", "fall": "พลัดตกหกล้ม"}
-_CAUSE_GROUP = """case when c like 'V%' then 'traf' when c between 'W00' and 'W19' then 'fall'
+_CAUSE_GROUP = """case when c like 'V%%' then 'traf' when c between 'W00' and 'W19' then 'fall'
        when c between 'W50' and 'W64' or c between 'X20' and 'X29' then 'animal'
        when c between 'X85' and 'Y09' then 'assault'
        when c between 'X40' and 'X49' or c between 'X60' and 'X69' then 'poison'
@@ -614,7 +662,7 @@ def mass_casualty(d1, d2, shift):
           select e.enter_er_time t, {LEVEL} lvl, e.er_dch_type dch,
             (select min(left(d.icd10, 3)) from ovstdiag d where d.vn = e.vn and d.icd10 regexp '^[V-Y]') c
           {FROM} {_where(d1, d2, shift)} and not {SVC}) x
-        where c is not null order by t""")
+        where c is not null order by t""", P)
     by = {}
     for r in rows:
         if r["g"] in MCI_GROUPS:
@@ -636,8 +684,8 @@ def mass_casualty(d1, d2, shift):
                 events.append({"start": grp[0][0], "end": grp[-1][0], "n": len(grp), "group": MCI_GROUPS[g],
                                "icd": icd,
                                "l12": sum(1 for x in grp if x[1] <= 2),
-                               "admit": sum(1 for x in grp if x[2] == 3),
-                               "refer": sum(1 for x in grp if x[2] == 2)})
+                               "admit": sum(1 for x in grp if x[2] in DCH["admit"]),
+                               "refer": sum(1 for x in grp if x[2] in DCH["refer"])})
                 i = j + 1
             else:
                 i += 1
@@ -761,8 +809,8 @@ def _build(d1, d2, shift, key):
         "profile": (patient_profile, d1, d2, shift),
         "quality": (quality, d1, d2, shift),
         "refer": (refer_destinations, d1, d2, shift),
-        "refer_dx": (top_dx_by_dch, d1, d2, shift, 2),
-        "admit_dx": (top_dx_by_dch, d1, d2, shift, 3),
+        "refer_dx": (top_dx_by_dch, d1, d2, shift, "refer"),
+        "admit_dx": (top_dx_by_dch, d1, d2, shift, "admit"),
         "injury": (injury_causes, d1, d2, shift),
         "opd": (from_opd, d1, d2, shift),
         "red": (red_over, d1, d2, shift),

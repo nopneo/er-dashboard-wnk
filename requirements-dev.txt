@@ -1,0 +1,3 @@
+# สำหรับรัน test (ไม่ต้องลงบนเซิร์ฟเวอร์) — python -m pytest
+-r requirements.txt
+pytest>=8,<10

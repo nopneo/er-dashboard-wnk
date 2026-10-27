@@ -71,7 +71,8 @@
   <a class="dl" href="{{ url_for('export', fmt='pdf') }}{{ q }}">⬇ PDF</a>
   <span class="hint">ส่งออกใช้เวลา ~10 วินาที</span>
   {% endif %}
-  <a class="dl" href="{{ url_for('nurse') }}">🩺 พยาบาลตรวจแทนแพทย์</a>
+  <a class="dl nav" href="{{ url_for('nurse') }}">🩺 พยาบาลตรวจแทนแพทย์</a>
+  {% if check_allowed %}<a class="dl nav" href="{{ url_for('check_page') }}">🔎 ตรวจข้อมูล</a>{% endif %}
   <span class="asof">ข้อมูล ณ {{ d.generated_at }}</span>
 </form>
 
@@ -83,7 +84,7 @@
   note.className = 'dl-note';
   note.hidden = true;
   bar.appendChild(note);
-  bar.querySelectorAll('a.dl').forEach(function (a) {
+  bar.querySelectorAll('a.dl:not(.nav)').forEach(function (a) {
     a.addEventListener('click', function () {
       if (a.dataset.busy) return;
       a.dataset.busy = '1';
@@ -95,6 +96,23 @@
   });
 })();
 </script>
+
+{% if not print_mode and not data_audited %}
+{# Data Audit: ซ่อนเมื่อผู้ดูแลตั้ง ER_DATA_AUDITED=1 หรือกด "ยืนยันว่าตรวจแล้ว" ที่หน้า /check (จำในเบราว์เซอร์นี้)
+   ไม่แสดงในโหมดพิมพ์ (?print=1) ที่ปุ่มส่งออกใช้ จึงไม่ติดไปในไฟล์ JPG/PNG/PDF #}
+<div class="audit-bar" data-audit-key="er-audited:{{ hospital }}"><div>
+  ⚠ <b>ตัวเลขยังไม่ได้ตรวจกับข้อมูลของโรงพยาบาลนี้</b> — รหัสใน HOSxP (ประเภทการมา การจำหน่าย แผนก ER ฯลฯ)
+  ของแต่ละโรงพยาบาลไม่เหมือนกัน
+  {% if check_allowed %}เปิด <a href="{{ url_for('check_page') }}">ตรวจข้อมูลก่อนใช้</a> ก่อนนำตัวเลขไปใช้
+  {% else %}ให้ผู้ดูแลระบบเปิดหน้าตรวจข้อมูลจากเครื่องในโรงพยาบาลก่อนนำตัวเลขไปใช้{% endif %}
+</div></div>
+<script>
+  (function () {
+    var bar = document.currentScript.previousElementSibling;
+    try { if (localStorage.getItem(bar.dataset.auditKey)) bar.remove(); } catch (e) {}
+  })();
+</script>
+{% endif %}
 
 {% set k = d.kpi %}
 <div class="sheet">

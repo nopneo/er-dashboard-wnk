@@ -94,7 +94,7 @@ table.blk { font-size: 9pt; } table.blk td { padding: 3px 7px; } table.blk td:fi
     <div><b>5</b> ติดตั้งบน Windows</div>
     <div><b>6</b> ติดตั้งด้วย Docker</div>
     <div><b>7</b> ตั้งค่า (.env)</div>
-    <div><b>8</b> ปรับให้ตรงกับการบันทึกของโรงพยาบาล</div>
+    <div><b>8</b> ตรวจข้อมูลก่อนใช้ / ปรับให้ตรงกับการบันทึก</div>
     <div><b>9</b> เปิดผ่านโดเมนของโรงพยาบาล</div>
     <div><b>10</b> ตรวจสอบหลังติดตั้ง</div>
     <div><b>11</b> ความปลอดภัย</div>
@@ -251,16 +251,19 @@ docker run -d -p 6200:8080 --env-file .env --restart unless-stopped er-dashboard
 </section>
 
 <section>
-  <h2><span class="n">8</span>ปรับให้ตรงกับการบันทึกของโรงพยาบาล</h2>
-  <p>แต่ละโรงพยาบาลตั้งค่า HOSxP ต่างกัน ตรวจ 3 เรื่องนี้หลังติดตั้ง</p>
-  <h3>8.1 คอลัมน์ "เริ่มตรวจ" ใน service_time</h3>
-<pre>SELECT service4_dep, service5_dep, service11_dep, service12_dep, COUNT(*)
-FROM service_time s JOIN er_regist e ON e.vn = s.vn
-WHERE e.vstdate &gt;= CURDATE() - INTERVAL 7 DAY
-GROUP BY 1,2,3,4 ORDER BY 5 DESC LIMIT 5;</pre>
-  <p>คอลัมน์ที่ <code>_dep</code> เป็นรหัสแผนก ER และเวลาอยู่หลังเวลาเข้า ER คือคอลัมน์ที่ใช้ → ตั้ง <code>ER_ST_DOCTOR_COL</code></p>
-  <h3>8.2 รหัสแผนก ER</h3>
-<pre>SELECT depcode, department FROM kskdepartment;</pre>
+  <h2><span class="n">8</span>ตรวจข้อมูลก่อนใช้ / ปรับให้ตรงกับการบันทึก</h2>
+  <div class="box warn"><b>ก่อนนำตัวเลขไปใช้</b> — รหัสใน HOSxP ของแต่ละโรงพยาบาลไม่เหมือนกัน (ประเภทการมา EMS / Refer / นัด,
+    การจำหน่าย, ประเภทผู้ป่วย, แผนก ER, คอลัมน์เริ่มตรวจ) ถ้าไม่ตรง ตัวเลขเพี้ยนโดยไม่มีข้อความเตือน
+    แดชบอร์ดจึงแสดงแถบ “ตัวเลขยังไม่ได้ตรวจกับข้อมูลของโรงพยาบาลนี้” จนกว่าจะตรวจตามข้อ 8.1–8.2</div>
+  <h3>8.1 ตรวจความพร้อม — setup_check.py</h3>
+<pre>.venv/bin/python setup_check.py        <span class="c"># Windows: .venv\Scripts\python setup_check.py</span></pre>
+  <p>ตรวจ Python ไลบรารี เขตเวลา Chrome การเชื่อมต่อฐานข้อมูล สิทธิ์อ่านอย่างเดียว ตารางที่ใช้ ภาษาไทย visit ER ล่าสุด
+    และรหัสของโรงพยาบาล · ✔ ผ่าน · ⚠ ควรตรวจ · ✘ ต้องแก้ก่อนใช้ · แนบผลนี้ทุกครั้งที่แจ้งปัญหา</p>
+  <h3>8.2 ตรวจข้อมูลก่อนใช้ — หน้า /check</h3>
+  <p>เปิด <code>http://&lt;เซิร์ฟเวอร์&gt;:6200/check</code> <b>จากเครื่องในโรงพยาบาล</b> (แสดงเฉพาะจำนวนนับ)
+    บนสุดสรุปเรื่องที่ควรแก้ ตารางแรกเทียบรหัสที่แอปใช้กับชื่อรหัสและ % ของ visit ER ที่พบจริง พร้อมค่าที่ควรตั้ง
+    เช่น <code>ER_EMS_FR_CODES=06,07</code> · ใส่ใน <code>.env</code> → รีสตาร์ต → เปิดหน้านี้ใหม่
+    · ทดลองใช้คู่รายงานเดิม 1–2 สัปดาห์ ตัวเลขตรงแล้วตั้ง <code>ER_DATA_AUDITED=1</code> (ซ่อนแถบเตือน)</p>
   <h3>8.3 เวลาพบแพทย์</h3>
   <p>หลายโรงพยาบาลกดปุ่ม "เริ่มตรวจ" ตอนเปิดชาร์ตลงบันทึก ซึ่งช้ากว่าการตรวจจริง แดชบอร์ดจึงใช้
     <b>เวลาที่เร็วที่สุด</b>ของ กดเริ่มตรวจ / สั่ง Lab / สั่ง X-ray / สั่งยา / เวลาที่พยาบาลจดใน HPI
@@ -300,6 +303,7 @@ ProxyPassReverse /erdash/ http://127.0.0.1:6200/
 <section>
   <h2><span class="n">10</span>ตรวจสอบหลังติดตั้ง</h2>
   <ul class="check">
+    <li><code>setup_check.py</code> ไม่มีข้อ ✘ และหน้า <code>/check</code> ไม่มีข้อ “ไม่ตรง”</li>
     <li><code>/healthz</code> ตอบ <code>{"status":"ok"}</code></li>
     <li>จำนวนผู้มา ER ตรงกับรายงาน ER ของ HOSxP ในช่วงเดียวกัน</li>
     <li>บล็อก 11 "มีเวลาพบแพทย์" ไม่ต่ำผิดปกติ (ถ้าต่ำ ตรวจหัวข้อ 8.1)</li>

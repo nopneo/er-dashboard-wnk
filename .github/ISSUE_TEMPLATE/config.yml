@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: คู่มือติดตั้ง (อ่านข้อ 0 “ก่อนนำไปใช้” ก่อน)
+    url: https://github.com/nopneo/er-dashboard-wnk/blob/main/INSTALL.md
+    about: ขั้นตอนติดตั้ง ตรวจสภาพแวดล้อม (setup_check.py) และตรวจข้อมูลของโรงพยาบาล (/check)
+  - name: ความปลอดภัย (รายงานช่องโหว่)
+    url: https://github.com/nopneo/er-dashboard-wnk/blob/main/SECURITY.md
+    about: ช่องโหว่ด้านความปลอดภัยให้แจ้งตามช่องทางใน SECURITY.md ไม่เปิดเป็น issue สาธารณะ
