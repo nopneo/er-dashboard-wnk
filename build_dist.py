@@ -8,7 +8,8 @@ import re
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FILES = ["app.py", "cache.py", "db.py", "nurse_report.py", "queries.py", "render.py",
+FILES = ["app.py", "cache.py", "check.py", "db.py", "nurse_report.py", "queries.py", "render.py",
+         "setup_check.py",
          "requirements.txt", ".env.example", "README.md", "INSTALL.md", "SECURITY.md", "CHANGELOG.md",
          "Dockerfile", ".dockerignore", "LICENSE", "NOTICE.md"]
 DIRS = ["templates", "static"]

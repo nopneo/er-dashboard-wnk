@@ -6,6 +6,9 @@
 
 เลือกโหมดด้วย env `ER_DB_MODE` (default: direct ถ้ามี DB_PASS, ไม่งั้น ssh)
 ข้อมูลใน HOSxP เก็บเป็น tis-620 จึงต้องระบุ charset ให้ถูกทั้งสองทาง
+
+รหัสที่ตั้งได้ด้วย env (ER_*_CODES ฯลฯ) ส่งเป็นพารามิเตอร์: fetch("... in %(ems)s", {"ems": ("04", "06")})
+เมื่อส่งพารามิเตอร์ เครื่องหมาย % ที่เป็นตัวอักษรใน SQL ต้องเขียนเป็น %% (เช่น like 'Z%%')
 """
 
 import os
@@ -31,7 +34,7 @@ DB_TIMEOUT = int(os.getenv("ER_DB_TIMEOUT", "60"))
 MODE = os.getenv("ER_DB_MODE") or ("direct" if DB_PASS else "ssh")
 
 
-def _fetch_direct(sql):
+def _fetch_direct(sql, args=None):
     import pymysql
 
     conn = pymysql.connect(
@@ -48,14 +51,26 @@ def _fetch_direct(sql):
     )
     try:
         with conn.cursor() as cur:
-            cur.execute(sql)
+            cur.execute(sql, args)
             return cur.fetchall()
     finally:
         conn.close()
 
 
-def _fetch_ssh(sql):
+def _bind(sql, args):
+    """แทนพารามิเตอร์ลง SQL สำหรับโหมด ssh — escape แบบเดียวกับ pymysql"""
+    if args is None:
+        return sql
+    from pymysql.converters import escape_item
+
+    if isinstance(args, dict):
+        return sql % {k: escape_item(v, "utf8") for k, v in args.items()}
+    return sql % tuple(escape_item(v, "utf8") for v in args)
+
+
+def _fetch_ssh(sql, args=None):
     """รันผ่าน ssh แล้วแปลง TSV กลับเป็น list[dict]"""
+    sql = _bind(sql, args)
     remote = (
         "mariadb --default-character-set=tis620 --batch --raw "
         f"{shlex.quote(DB_NAME)} -e {shlex.quote(' '.join(sql.split()))}"
@@ -80,13 +95,13 @@ def _fetch_ssh(sql):
     return rows
 
 
-def fetch(sql):
-    rows = _fetch_direct(sql) if MODE == "direct" else _fetch_ssh(sql)
+def fetch(sql, args=None):
+    rows = _fetch_direct(sql, args) if MODE == "direct" else _fetch_ssh(sql, args)
     return [{k: (float(v) if isinstance(v, Decimal) else v) for k, v in r.items()} for r in rows]
 
 
-def fetch_one(sql):
-    rows = fetch(sql)
+def fetch_one(sql, args=None):
+    rows = fetch(sql, args)
     return rows[0] if rows else {}
 
 

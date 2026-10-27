@@ -26,6 +26,7 @@ from flask import Flask, jsonify, redirect, render_template, request, send_file,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash
 
+import check
 import db
 import nurse_report
 import queries
@@ -59,7 +60,7 @@ class PrefixMiddleware:
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
 
-VERSION = "1.2.1"
+VERSION = "1.3.0"
 ICON_VERSION = "1"
 DEV_CONTACT = "นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว"
 
@@ -414,6 +415,52 @@ def export(fmt):
         return {"error": f"ส่งออกไม่สำเร็จ: {type(e).__name__}"}, 500
     finally:
         _render_lock.release()
+
+
+#: เครือข่ายเพิ่มเติมที่นับเป็น "ใน รพ." นอกจาก IP ภายใน (เช่น IP สาธารณะของ รพ. เมื่อเข้าผ่าน Cloudflare)
+LAN_NETS = _nets(os.getenv("ER_LAN_NETS", ""))
+
+
+def _from_lan():
+    """คำขอนี้มาจากเครื่องใน รพ. หรือไม่ — ใช้ IP ผู้ใช้ตัวเดียวกับที่นับรหัสผิด (_client_ip)
+    ซึ่งเชื่อ header เฉพาะจาก proxy ที่ไว้ใจ / Cloudflare จริง จึงปลอม X-Forwarded-For เพื่อเข้าหน้าเฉพาะ LAN ไม่ได้
+
+    มี CF-Connecting-IP = มาผ่าน Cloudflare (ใส่ให้ทุกคำขอ คนข้างนอกลบไม่ได้) → นับเป็น LAN เฉพาะ IP ใน ER_LAN_NETS
+    เพราะ cloudflared บนเครื่องเดียวกันต่อเข้ามาจาก 127.0.0.1 — ถ้า X-Forwarded-For หาย _client_ip ได้ 127.0.0.1
+    และ IP ภายในใน X-Forwarded-For อาจเป็นค่าที่ผู้ใช้ส่งมาเอง จึงเชื่อ "IP ภายใน / loopback" เฉพาะคำขอที่ไม่ผ่าน Cloudflare
+    (คนใน LAN ใส่ CF-Connecting-IP เองได้ แต่มีแต่จะทำให้ตัวเองเข้าไม่ได้)"""
+    try:
+        ip = ipaddress.ip_address((_client_ip() or "").strip())
+    except ValueError:
+        return False
+    if any(ip in n for n in LAN_NETS):
+        return True
+    if request.headers.get("CF-Connecting-IP", "").strip():
+        return False
+    return ip.is_private or ip.is_loopback
+
+
+def _check_allowed():
+    """หน้าตรวจข้อมูล (/check) บอกโครงสร้างรหัสของ HOSxP — ค่าเริ่มต้นเปิดเฉพาะใน LAN · ER_CHECK_OPEN=1 = เปิดทุกที่"""
+    return os.getenv("ER_CHECK_OPEN", "0") == "1" or _from_lan()
+
+
+@app.context_processor
+def _audit_flags():
+    # ผู้ดูแลตรวจข้อมูลที่หน้า /check แล้ว → ไม่ต้องแสดงแถบเตือนบนแดชบอร์ด
+    return {"data_audited": os.getenv("ER_DATA_AUDITED", "0") == "1", "check_allowed": _check_allowed()}
+
+
+@app.route("/check")
+def check_page():
+    """Data Audit — รหัสที่แอปใช้เทียบกับข้อมูลของ รพ. นี้ (ค่าเริ่มต้น 30 วันล่าสุด) · เฉพาะจำนวนนับ"""
+    if not _check_allowed():
+        return render_template("check.html", lan_only=True), 403
+    d1, d2 = _range(92, date.today() - timedelta(days=29))
+    with queries.build_slot():
+        c = check.audit(d1, d2)
+    return render_template("check.html", c=c, d1=d1, d2=d2, period=queries._thai_range(d1, d2),
+                           q=queries, lan_only=False)
 
 
 @app.route("/manifest.webmanifest")

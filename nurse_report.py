@@ -5,6 +5,7 @@
   - ผู้ตรวจ = ผู้ลงโรคหลัก (ovstdiag diagtype 1) ถ้าว่างใช้ ovst.doctor
       พยาบาล = doctor.provider_type_code 03 (ตั้งด้วย ER_NURSE_PROVIDER_TYPES)
       แพทย์ = provider_type_code 01 หรือ position_id 1 (บางรายไม่ได้ลง provider_type_code)
+              (ตั้งด้วย ER_DOCTOR_PROVIDER_TYPES / ER_DOCTOR_POSITION_IDS)
   - "ตรวจแทนแพทย์" = พยาบาลเป็นผู้ตรวจ และไม่ใช่งานบริการ ได้แก่ ผู้ป่วยรับบริการอื่น ๆ (er_pt_type 4 = ทำแผล ฉีดยา)
     หรือโรคหลัก Z48 (ทำแผล ตัดไหม) / Z23–Z27 (วัคซีน) ที่ ER ลงเป็นผู้ป่วยทั่วไป
     — แยกนับเป็น "พยาบาลให้บริการ" ไม่ปนกับการตรวจ
@@ -23,7 +24,7 @@ from io import BytesIO
 
 from cache import TTLCache
 from db import fetch, num
-from queries import CACHE_TTL, SCREENED, build_slot, DISPOSITION, LEVEL, LEVEL_COLOR, LEVEL_NAME, TH_MONTH, _pct, _thai_date, _thai_datetime
+from queries import AUTOPSY_PT_TYPES, CACHE_TTL, P, SCREENED, SVC_PT_TYPES, _codes, build_slot, DISPOSITION, LEVEL, LEVEL_COLOR, LEVEL_NAME, TH_MONTH, _pct, _thai_date, _thai_datetime
 
 
 def _hhmm(name, default):
@@ -33,15 +34,16 @@ def _hhmm(name, default):
 
 START = _hhmm("ER_NP_START", "16:00")
 END = _hhmm("ER_NP_END", "20:00")
-NURSE_TYPES = tuple(c.strip() for c in os.getenv("ER_NURSE_PROVIDER_TYPES", "03").split(",")
-                    if re.fullmatch(r"\d{1,3}", c.strip())) or ("03",)
+NURSE_TYPES = _codes("ER_NURSE_PROVIDER_TYPES", "03")
+DOCTOR_TYPES = _codes("ER_DOCTOR_PROVIDER_TYPES", "01")
+DOCTOR_POSITIONS = _codes("ER_DOCTOR_POSITION_IDS", "1", ints=True)
 #: ช่วงยาวสุดของรายงานนี้ — query เบากว่าแดชบอร์ดหลักมาก จึงดูย้อนหลังได้หลายปี
 MAX_DAYS = int(os.getenv("ER_NP_MAX_DAYS", "1827"))
 
-#: er_pt_type ของ HOSxP
+#: ชื่อ er_pt_type ของ HOSxP (ใช้แสดงผล) · รับบริการ + ชันสูตรศพ ไม่นับเป็นการตรวจ
 PT_TYPE = {1: "ฉุกเฉิน", 2: "อุบัติเหตุ", 3: "ตรวจโรคทั่วไป", 4: "รับบริการอื่น ๆ", 5: "อุบัติเหตุจราจร",
            6: "ชันสูตรศพ"}
-SVC_TYPES = (4, 6)
+SVC_TYPES = SVC_PT_TYPES + AUTOPSY_PT_TYPES
 #: โรคหลักที่เป็นงานบริการแม้ลงประเภทผู้ป่วยอื่น — Z48 ทำแผล/ตัดไหม, Z23–Z27 วัคซีน (รหัสใน HOSxP ไม่มีจุด)
 SVC_PDX = re.compile(r"Z(48|2[3-7])")
 TH_WEEKDAY = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"]
@@ -97,25 +99,26 @@ def _month_label(ym):
 
 
 def _rows(d1, d2):
-    nt = ", ".join(f"'{c}'" for c in NURSE_TYPES)
     end = (datetime.strptime(END, "%H:%M") + timedelta(minutes=1)).strftime("%H:%M")
     return fetch(f"""
         select t.vstdate, t.tm, t.pt, t.lvl, t.dch, t.pdx,
-          case when ex.provider_type_code in ({nt}) then 'N'
-               when ex.provider_type_code = '01' or ex.position_id = 1 then 'D' else 'O' end ex,
+          case when ex.provider_type_code in %(nurse)s then 'N'
+               when ex.provider_type_code in %(doc_types)s or ex.position_id in %(doc_pos)s then 'D'
+               else 'O' end ex,
           ex.code exc, ex.name exn
         from (
-          select e.vstdate, time_format(e.enter_er_time, '%H:%i') tm, ifnull(e.er_pt_type, 0) pt,
+          select e.vstdate, time_format(e.enter_er_time, '%%H:%%i') tm, ifnull(e.er_pt_type, 0) pt,
             {LEVEL} lvl, ifnull(e.er_dch_type, 0) dch,
-            (select x.icd10 from ovstdiag x where x.vn = e.vn and x.diagtype = '1' limit 1) pdx,
+            (select x.icd10 from ovstdiag x where x.vn = e.vn and x.diagtype = %(pdx)s limit 1) pdx,
             coalesce((select nullif(x.doctor, '') from ovstdiag x
-                      where x.vn = e.vn and x.diagtype = '1' limit 1), o.doctor) exam
+                      where x.vn = e.vn and x.diagtype = %(pdx)s limit 1), o.doctor) exam
           from er_regist e join ovst o on o.vn = e.vn
             left join er_emergency_type et on et.er_emergency_type = e.er_emergency_type
           where e.vstdate between '{d1}' and '{d2}' and e.enter_er_time is not null and {SCREENED}
             and time(e.enter_er_time) >= '{START}:00' and time(e.enter_er_time) < '{end}:00'
         ) t left join doctor ex on ex.code = t.exam
-        order by t.vstdate, t.tm""")
+        order by t.vstdate, t.tm""", {**P, "nurse": NURSE_TYPES, "doc_types": DOCTOR_TYPES,
+                                        "doc_pos": DOCTOR_POSITIONS})
 
 
 def _holidays(d1, d2):
@@ -233,7 +236,7 @@ def _build(d1, d2, key):
                per_month=round(sum(m["nurse"] for m in full_m) / len(full_m), 1) if full_m else None,
                full_months=len(full_m),
                nurse_l12=sum(r["lvl"] <= 2 for r in nurse),
-               nurse_ar=sum(r["dch"] in (2, 3) for r in nurse),
+               nurse_ar=sum(r["dch"] in P["dch_ar"] for r in nurse),
                # เฉพาะเคสที่มีการตรวจ (พยาบาลตรวจแทนแพทย์ + แพทย์ตรวจ) ไม่นับงานบริการและไม่ระบุผู้ตรวจ
                l345=sum(3 <= r["lvl"] <= 5 and r["g"] in ("nurse", "doctor") for r in rows))
     kpi["l345_per_day"] = round(kpi["l345"] / days, 1) if days else 0

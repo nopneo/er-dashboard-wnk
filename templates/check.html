@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ตรวจข้อมูลก่อนใช้ — {{ hospital }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_v }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icon/favicon-32.png') }}">
+<meta name="theme-color" content="#b91c1c">
+</head>
+<body class="ck-page">
+<div class="sheet">
+
+  <div class="ck-head">
+    <a class="ck-back" href="{{ url_for('dashboard') }}">‹ กลับแดชบอร์ด</a>
+    <div>
+      <div class="ck-ttl">ตรวจข้อมูลก่อนใช้ (Data Audit)</div>
+      <div class="ck-sub">{{ hospital }}{% if not lan_only %} · {{ period }}{% endif %}</div>
+    </div>
+  </div>
+
+  {% if lan_only %}
+  <div class="block"><p>🔒 หน้านี้เปิดได้เฉพาะเครื่องในเครือข่ายของโรงพยาบาล
+    — ให้ผู้ดูแลระบบเปิดจากเครื่องใน รพ. (หรือตั้ง <code>ER_LAN_NETS</code> / <code>ER_CHECK_OPEN=1</code> ตาม INSTALL.md)</p></div>
+  {% else %}
+
+  <form class="toolbar ck-form" method="get" action="{{ url_for('check_page') }}">
+    <label>ตั้งแต่ <input type="date" name="d1" value="{{ d1 }}" required></label>
+    <label>ถึง <input type="date" name="d2" value="{{ d2 }}" required></label>
+    <button type="submit">⟳ ตรวจ</button>
+    <span class="hint">ช่วงยาวสุด 92 วัน · แสดงเฉพาะจำนวนนับ ไม่มีข้อมูลรายคน</span>
+  </form>
+
+  {% set ST = {'ok': ('good', 'ตรง'), 'warn': ('watch', 'ควรตรวจ'), 'bad': ('bad', 'ไม่ตรง')} %}
+  <div class="audit-sum {{ 'bad' if c.issues else 'good' }}">
+    {% if c.issues %}
+    <div class="h">⚠ พบ {{ c.issues | length }} เรื่องที่ควรตรวจก่อนนำตัวเลขไปใช้</div>
+    <ul>{% for i in c.issues %}<li>{{ i }}</li>{% endfor %}</ul>
+    {% else %}
+    <div class="h">✅ ไม่พบรหัสหรือข้อมูลที่ผิดปกติในช่วงที่ตรวจ</div>
+    {% endif %}
+    <p class="note">ผลอัตโนมัติจับได้แค่สิ่งที่ “ดูผิดปกติ” จากชื่อรหัสและจำนวน — ให้เทียบตัวเลขบนแดชบอร์ดกับรายงาน ER เดิมของโรงพยาบาล
+      อย่างน้อย 1–2 สัปดาห์ก่อนใช้จริง</p>
+    {% if c.audited %}
+    <p>✅ ผู้ดูแลยืนยันแล้ว (<code>ER_DATA_AUDITED=1</code>) — แดชบอร์ดไม่แสดงแถบเตือน</p>
+    {% else %}
+    <p><button type="button" class="audit-ok" data-audit-key="er-audited:{{ hospital }}">✔ ยืนยันว่าตรวจแล้ว (เฉพาะเบราว์เซอร์นี้)</button>
+      <span class="audit-done" hidden>ยืนยันแล้วในเบราว์เซอร์นี้ — <a href="#" class="audit-undo">ยกเลิก</a></span><br>
+      <small>ยืนยันให้ทุกเครื่อง: ตั้ง <code>ER_DATA_AUDITED=1</code> ใน <code>.env</code> แล้วรีสตาร์ตแอป</small></p>
+    {% endif %}
+  </div>
+
+  {% set b = c.base %}
+  <section class="block">
+    <header><span class="no">1</span><span class="t">รหัสที่แอปใช้ เทียบกับข้อมูลของโรงพยาบาลนี้</span></header>
+    <p class="ck-note">visit ER ในช่วงที่ตรวจ <b>{{ '{:,}'.format(b.n_er) }}</b> ราย ·
+      คัดกรองแล้ว (นับในแดชบอร์ด) <b>{{ '{:,}'.format(c.total) }}</b> ราย — % ในตารางคิดจากจำนวนนี้</p>
+    {% if c.env_errors %}<p class="ck-err">⚠ ค่า env รูปแบบผิด ใช้ค่าเริ่มต้นแทน: <code>{{ c.env_errors | join(', ') }}</code>
+      (รหัสคั่นด้วยจุลภาค ตัวอักษร/ตัวเลขไม่เกิน 5 ตัว)</p>{% endif %}
+    <div class="ck-tw"><table class="t ck">
+      <tr><th>เรื่อง</th><th>env</th><th>แอปใช้</th><th>พบในข้อมูล</th><th>มีผลกับ</th><th>สถานะ</th></tr>
+      {% for x in c.codes %}
+      {% if x.error %}<tr><td class="l">{{ x.label }}</td><td colspan="5"><small>ตรวจไม่ได้ ({{ x.error }}) — ตารางไม่มีใน HOSxP รุ่นนี้ หรือบัญชีไม่มีสิทธิ์อ่าน</small></td></tr>
+      {% else %}
+      <tr><td class="l">{{ x.label }}</td><td>{% if x.env %}<code>{{ x.env }}</code>{% else %}–{% endif %}</td>
+        <td><code>{{ x.assume }}</code></td>
+        <td>{{ x.found }}{% if x.fix %}<br><small>แก้: <code>{{ x.fix }}</code></small>{% endif %}</td>
+        <td><small>{{ x.impact }}</small></td>
+        <td><span class="pp {{ ST[x.status][0] }}">{{ ST[x.status][1] }}</span></td></tr>
+      {% endif %}
+      {% endfor %}
+    </table></div>
+    <p class="ck-note">ตั้งค่าใน <code>.env</code> แล้วรีสตาร์ตแอป · หลายรหัสคั่นด้วยจุลภาค เช่น <code>ER_EMS_ALS_CODES=04,07</code>
+      · ค่าเริ่มต้น = รหัสมาตรฐานของ HOSxP</p>
+  </section>
+
+  {% macro codes_table(title, no, res, note='') %}
+  <section class="block">
+    <header><span class="no">{{ no }}</span><span class="t">{{ title }}</span></header>
+    {% if res.error %}<p class="ck-note">อ่านไม่ได้ ({{ res.error }})</p>{% else %}
+    {% if res.names is defined and not res.names %}<p class="ck-note">ไม่พบตารางชื่อรหัส — แสดงเฉพาะรหัส</p>{% endif %}
+    <div class="ck-tw"><table class="t ck">
+      <tr><th>รหัส</th><th>ชื่อในตาราง</th><th>visit ER</th><th>%</th><th>แอปนับเป็น</th><th>หมายเหตุ</th></tr>
+      {% for x in res.rows %}
+      <tr class="{{ 'ck-warn' if x.note }}"><td><code>{{ x.code }}</code></td><td class="l">{{ x.name }}</td>
+        <td>{{ '{:,}'.format(x.n) }}</td><td>{{ x.pct }}%</td><td>{{ x.group or x.role or '–' }}</td>
+        <td>{% if x.note %}<b>⚠ {{ x.note }}</b>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="6">ไม่มีข้อมูลในช่วงที่ตรวจ</td></tr>
+      {% endfor %}
+    </table></div>
+    {% if note %}<p class="ck-note">{{ note }}</p>{% endif %}
+    {% endif %}
+  </section>
+  {% endmacro %}
+
+  {{ codes_table('ประเภทการมา (ovst.ovstist)', 2, c.ovstist, 'รหัสที่ไม่เข้ากลุ่มรวมเป็น “อื่น ๆ” ในบล็อก 9') }}
+  {{ codes_table('การจำหน่ายจาก ER (er_regist.er_dch_type)', 3, c.dch, 'เสียชีวิตรวมใน “อื่น ๆ” ตามที่ตกลงไว้ว่าไม่แสดงบนแดชบอร์ด') }}
+  {{ codes_table('ประเภทผู้ป่วย ER (er_regist.er_pt_type)', 4, c.pt, 'ประเภทอื่นนับเป็นผู้ป่วยทั่วไป') }}
+  {{ codes_table('ประเภทการวินิจฉัย (ovstdiag.diagtype)', 5, c.diag, 'visit หนึ่งมีได้หลายประเภท — % รวมกันเกิน 100% ได้') }}
+
+  <section class="block">
+    <header><span class="no">6</span><span class="t">ระดับความเร่งด่วน (er_emergency_level_id)</span></header>
+    {% if c.levels.error %}<p class="ck-note">อ่านไม่ได้ ({{ c.levels.error }})</p>{% else %}
+    <div class="ck-tw"><table class="t ck">
+      <tr><th>ระดับ</th><th>ชื่อในตาราง</th><th>visit ER</th><th>%</th><th>แดชบอร์ดแสดงเป็น</th></tr>
+      {% for x in c.levels.rows %}
+      <tr><td><code>{{ x.code }}</code></td><td class="l">{{ x.name }}</td><td>{{ '{:,}'.format(x.n) }}</td><td>{{ x.pct }}%</td>
+        <td>{{ q.LEVEL_NAME.get(x.code | int(0), '–') if x.code != '–' else 'ไม่นับ' }}</td></tr>
+      {% else %}<tr><td colspan="5">ไม่มีข้อมูล</td></tr>
+      {% endfor %}
+    </table></div>
+    <p class="ck-note">% คิดจาก visit ER ทั้งหมด (รวมที่ยังไม่ได้คัดกรอง) · ถ้าระดับว่างแต่มี <code>er_emergency_type</code> แอปใช้ <code>export_code</code> แทน</p>
+    {% endif %}
+  </section>
+
+  {{ codes_table('แผนกที่ลงทะเบียนครั้งแรก (ovst.main_dep) ของ visit ER', 7, c.deps,
+                 'แผนกอื่นนอกจาก ER_DEPCODE และ ER_NOT_DEPCODES นับเป็น “ส่งมาจาก OPD / แผนกอื่น” ในบล็อก 16') }}
+
+  <section class="block">
+    <header><span class="no">8</span><span class="t">ความครบของข้อมูลใน er_regist</span></header>
+    <div class="ck-tw"><table class="t ck">
+      <tr><th>ข้อมูล</th><th>มี</th><th>จาก</th><th>%</th><th>ผลถ้าไม่มี</th><th>สถานะ</th></tr>
+      {% for t in c.times %}
+      <tr><td class="l">{{ t.label }}</td><td>{{ '{:,}'.format(t.have) }}</td><td>{{ '{:,}'.format(t.base) }}</td>
+        <td>{{ t.pct }}%</td><td><small>{{ t.impact }}</small></td>
+        <td><span class="pp {{ ST[t.status][0] }}">{{ ST[t.status][1] }}</span></td></tr>
+      {% endfor %}
+    </table></div>
+  </section>
+
+  <section class="block">
+    <header><span class="no">9</span><span class="t">แหล่งเวลาพบแพทย์ (Door-to-Doctor)</span></header>
+    {% if c.d2d.error %}<p class="ck-note">อ่านไม่ได้ ({{ c.d2d.error }})</p>{% else %}
+    <div class="ck-tw"><table class="t ck">
+      <tr><th>แหล่ง</th><th>visit ที่มีเวลาภายใน {{ q.D2D_MAX }} นาทีหลังเข้า ER</th><th>%</th></tr>
+      {% for r in c.d2d.rows %}
+      <tr><td class="l">{{ r.label }}</td><td>{{ '{:,}'.format(r.n) }}</td><td>{{ r.pct }}%</td></tr>
+      {% endfor %}
+    </table></div>
+    <p class="ck-note">แดชบอร์ดใช้เวลาที่เร็วที่สุดของทุกแหล่ง · ไม่มีแหล่งใดเลย = ไม่นับในค่าเฉลี่ยเวลาพบแพทย์</p>
+    {% endif %}
+    {% if c.st_cols %}
+    <h3 class="ck-h3">คอลัมน์เวลาใน service_time ของ visit ER</h3>
+    <div class="ck-tw"><table class="t ck">
+      <tr><th>คอลัมน์</th><th>มีเวลาหลังเข้า ER</th><th>เฉลี่ยหลังเข้า ER</th><th>กดจากแผนก (มากสุด)</th><th>แอปใช้</th></tr>
+      {% for x in c.st_cols if x.n %}
+      <tr class="{{ 'ck-warn' if c.st.suggest == x.col }}"><td><code>{{ x.col }}</code></td><td>{{ x.pct }}%</td>
+        <td>{{ (x.after ~ ' นาที') if x.after is not none else '–' }}</td>
+        <td>{% for d in x.deps %}{{ d.code }} {{ d.name }} <small>{{ d.pct | int }}%</small>{% if not loop.last %} · {% endif %}{% endfor %}</td>
+        <td>{% if x.used %}✔ เริ่มตรวจ{% elif c.st.suggest == x.col %}<b>เสนอ</b>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="5">ไม่มีเวลาใน service_time ภายใน {{ q.D2D_MAX }} นาทีหลังเข้า ER</td></tr>
+      {% endfor %}
+    </table></div>
+    <p class="ck-note">คอลัมน์ที่กดก่อน (เฉลี่ยไม่กี่นาทีหลังเข้า ER) มักเป็นการคัดกรอง ไม่ใช่แพทย์เริ่มตรวจ — ตรวจกับการทำงานจริงก่อนตั้ง <code>ER_ST_DOCTOR_COL</code></p>
+    {% endif %}
+  </section>
+
+  {{ codes_table('ประเภทผู้ลงวินิจฉัยหลัก (doctor.provider_type_code) — รายงานพยาบาลตรวจแทนแพทย์', 10, c.providers) }}
+  {% endif %}
+
+  <div class="appinfo">
+    <span><b>ER Dashboard</b> เวอร์ชัน {{ version }}</span>
+    <span>📞 ติดต่อ: {{ contact }}</span>
+  </div>
+</div>
+<script>
+  // ยืนยันว่าตรวจข้อมูลแล้ว (จำในเบราว์เซอร์นี้ แยกตามชื่อ รพ.) → แดชบอร์ดซ่อนแถบเตือน
+  (function () {
+    var btn = document.querySelector('.audit-ok');
+    if (!btn) return;
+    var key = btn.dataset.auditKey, done = document.querySelector('.audit-done');
+    function show(on) { btn.hidden = on; done.hidden = !on; }
+    try { show(!!localStorage.getItem(key)); } catch (e) {}
+    btn.addEventListener('click', function () {
+      try { localStorage.setItem(key, new Date().toISOString()); show(true); } catch (e) {}
+    });
+    document.querySelector('.audit-undo').addEventListener('click', function (ev) {
+      ev.preventDefault();
+      try { localStorage.removeItem(key); show(false); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

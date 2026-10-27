@@ -1,6 +1,6 @@
 # ER Dashboard — แดชบอร์ดบริหารจัดการห้องฉุกเฉิน (HOSxP)
 
-> **เวอร์ชัน 1.2.1** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
+> **เวอร์ชัน 1.3.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
 > ดาวน์โหลดชุดติดตั้ง: [Releases](https://github.com/nopneo/er-dashboard-wnk/releases/latest) · สรุปขั้นตอน: [INSTALL.md](INSTALL.md) ·
 > ความปลอดภัย: [SECURITY.md](SECURITY.md) · การเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
 
@@ -11,16 +11,22 @@
 
 ![ER Dashboard](docs/manual/img/dashboard.jpg)
 
+> **นำไปใช้ที่โรงพยาบาลอื่น อ่าน [INSTALL.md ข้อ 0 “ก่อนนำไปใช้”](INSTALL.md#0-ก่อนนำไปใช้--อ่านก่อนติดตั้ง) ก่อน** —
+> รหัสใน HOSxP (ประเภทการมา การจำหน่าย แผนก ER …) ของแต่ละ รพ. ไม่เหมือนกัน ถ้าไม่ตรงตัวเลขจะเพี้ยนโดยไม่มีข้อความเตือน
+> ตรวจด้วย `python setup_check.py` และหน้า **`/check`** (Data Audit) แล้วตั้งรหัสด้วย env `ER_*`
+
 ## วิธีใช้
 
 ```bash
 pip install -r requirements.txt
 cp .env.example .env          # แก้ DB_USER / DB_PASS (บัญชีอ่านอย่างเดียว)
-python app.py                 # http://127.0.0.1:6200/   (debug ปิด เปิดด้วย FLASK_DEBUG=1)
+python setup_check.py         # ตรวจสภาพแวดล้อม ฐานข้อมูล และรหัสของ รพ. (✔ / ⚠ / ✘)
+python app.py                 # http://127.0.0.1:6200/   (debug ปิด เปิดด้วย FLASK_DEBUG=1) · ตรวจข้อมูล /check
 python render.py --d1 2026-09-01 --d2 2026-09-30 --fmt jpg
 ```
 
 เลือกช่วงวันที่และเวรจากแถบด้านบน (`?d1=YYYY-MM-DD&d2=YYYY-MM-DD&shift=all|D|C|B`) · API ดิบ `GET /api/data.json`
+· test (ไม่ต่อฐานข้อมูลจริง): `pip install -r requirements-dev.txt` แล้ว `python -m pytest`
 
 ## บล็อกในรายงาน
 
