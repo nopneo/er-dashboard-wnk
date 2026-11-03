@@ -452,6 +452,8 @@ ARRIVAL = [("ลงทะเบียนเอง / Kiosk", WALKIN_CODES, "#ef44
            ("EMS ALS/FR", EMS_ALS_CODES + EMS_FR_CODES, "#f59e0b"),
            ("มาตามนัด", APPT_CODES, "#3b82f6"),
            ("รับส่งต่อ (Refer in)", REFER_IN_CODES, "#8b5cf6")]
+#: กลุ่มที่แสดงยอดแยกย่อยใต้แถว เช่น "ALS 200 / FR 315"
+ARRIVAL_PARTS = {"EMS ALS/FR": [("ALS", EMS_ALS_CODES), ("FR", EMS_FR_CODES)]}
 
 
 def patient_profile(d1, d2, shift):
@@ -462,7 +464,11 @@ def patient_profile(d1, d2, shift):
     arrival = []
     for label, codes, color in ARRIVAL:
         v = sum(by.get(c, 0) for c in codes)
-        arrival.append({"label": label, "value": v, "pct": _pct(v, total), "color": color})
+        item = {"label": label, "value": v, "pct": _pct(v, total), "color": color}
+        if label in ARRIVAL_PARTS:
+            item["parts"] = [{"label": n, "value": sum(by.get(c, 0) for c in cs)}
+                             for n, cs in ARRIVAL_PARTS[label]]
+        arrival.append(item)
     other = total - sum(i["value"] for i in arrival)
     if other > 0:
         arrival.append({"label": "อื่น ๆ", "value": other, "pct": _pct(other, total), "color": "#94a3b8"})

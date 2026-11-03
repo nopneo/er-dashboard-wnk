@@ -227,6 +227,7 @@ tr.tot .pp { background: rgba(255,255,255,.2); color: #fff; }
 .legend .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend .vl { font-family: 'Kanit'; font-weight: 600; color: var(--maroon); }
 .legend .pc { color: var(--muted); font-size: 12.5px; }
+.legend .sub { margin: -4px 0 2px 18px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
 .note {
   margin-top: 12px; border-radius: 18px; background: var(--rose-2); border: 1.5px solid var(--rose-b);
