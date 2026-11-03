@@ -42,6 +42,7 @@
     <span class="nm" title="{{ it.label }}">{{ it.label }}</span>
     <span class="vl">{{ it.value }}</span>
     <span class="pc">({{ it.pct }}%)</span></div>
+  {% if it.parts %}<div class="sub">{% for p in it.parts %}{{ p.label }} {{ '{:,}'.format(p.value) }}{{ ' / ' if not loop.last }}{% endfor %}</div>{% endif %}
   {% endfor %}
 </div>
 {% endmacro %}

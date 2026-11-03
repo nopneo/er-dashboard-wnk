@@ -60,7 +60,7 @@ class PrefixMiddleware:
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 ICON_VERSION = "1"
 DEV_CONTACT = "นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว"
 

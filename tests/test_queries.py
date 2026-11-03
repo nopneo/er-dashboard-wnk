@@ -77,3 +77,12 @@ def test_env_example_lists_code_settings():
     for k in ("ER_WALKIN_CODES", "ER_APPT_CODES", "ER_REFER_IN_CODES", "ER_EMS_ALS_CODES", "ER_EMS_FR_CODES",
               "ER_PDX_DIAGTYPE", "ER_SVC_PT_TYPES", "ER_AUTOPSY_PT_TYPES", "ER_DCH_ADMIT", "ER_DATA_AUDITED"):
         assert k in text, k
+
+
+def test_ems_row_shows_als_fr_split(monkeypatch):
+    rows = [{"t": "01", "n": 50}, {"t": "04", "n": 200}, {"t": "06", "n": 315}, {"t": "02", "n": 10}]
+    monkeypatch.setattr(queries, "fetch", lambda sql, args=None: rows if "o.ovstist t" in sql else [])
+    monkeypatch.setattr(queries, "fetch_one", lambda sql, args=None: {})
+    ems = next(i for i in queries.patient_profile(D1, D2, "all")["arrival"] if i["label"] == "EMS ALS/FR")
+    assert ems["value"] == 515
+    assert ems["parts"] == [{"label": "ALS", "value": 200}, {"label": "FR", "value": 315}]
