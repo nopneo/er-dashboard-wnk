@@ -449,7 +449,7 @@ def time_to_disposition(d1, d2, shift):
 
 #: กลุ่มของ ovst.ovstist ในบล็อกโปรไฟล์ — รหัสอื่นรวมเป็น "อื่น ๆ"
 ARRIVAL = [("ลงทะเบียนเอง / Kiosk", WALKIN_CODES, "#ef4444"),
-           ("EMS (ALS / FR)", EMS_ALS_CODES + EMS_FR_CODES, "#f59e0b"),
+           ("EMS ALS/FR", EMS_ALS_CODES + EMS_FR_CODES, "#f59e0b"),
            ("มาตามนัด", APPT_CODES, "#3b82f6"),
            ("รับส่งต่อ (Refer in)", REFER_IN_CODES, "#8b5cf6")]
 
