@@ -361,6 +361,10 @@ tr.tot .pp { background: rgba(255,255,255,.2); color: #fff; }
   border-radius: 12px; border: 1.5px solid #f3c9c9; background: #fff; color: var(--red-d);
 }
 .toolbar a.dl:hover { background: var(--rose); }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.presets a { font-family: 'Kanit'; font-size: 13px; color: var(--maroon); background: #fff;
+             border: 1.5px solid var(--rose-b); border-radius: 20px; padding: 3px 11px; text-decoration: none; }
+.presets a.on { background: var(--red); border-color: var(--red); color: #fff; }
 .toolbar .hint { font-size: 12.5px; color: var(--muted); }
 .toolbar .dl-note { font-size: 13px; font-weight: 600; color: var(--red-d); }
 .toolbar .asof { color: var(--muted); }

@@ -60,7 +60,7 @@ class PrefixMiddleware:
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 ICON_VERSION = "1"
 DEV_CONTACT = "นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว"
 
@@ -155,7 +155,7 @@ def _params():
 @app.route("/")
 def dashboard():
     d1, d2, shift = _params()
-    return render_template("dashboard.html", d=queries.build(d1, d2, shift),
+    return render_template("dashboard.html", d=queries.build(d1, d2, shift), presets=_fy_presets(),
                            print_mode=request.args.get("print") == "1")
 
 
@@ -168,6 +168,22 @@ def api_data():
 def _fy_start(today=None):
     today = today or date.today()
     return date(today.year - (0 if today.month >= 10 else 1), 10, 1)
+
+
+def _fy_label(fy):
+    """ปีงบประมาณ (พ.ศ.) ของปีที่เริ่มวันที่ fy — 1 ต.ค. 2568 → ปีงบ 2569"""
+    return f"ปีงบ {fy.year + 544}"
+
+
+def _fy_presets(today=None, years=3):
+    """ปุ่มลัดดูรายปีงบประมาณ (1 ต.ค. – 30 ก.ย.) — ปีปัจจุบันถึงวันนี้ แล้วย้อนหลัง"""
+    today = today or date.today()
+    fy, out = _fy_start(today), []
+    for i in range(years):
+        d1 = fy.replace(year=fy.year - i)
+        d2 = today if i == 0 else d1.replace(year=d1.year + 1) - timedelta(days=1)
+        out.append({"label": _fy_label(d1), "d1": d1.isoformat(), "d2": d2.isoformat()})
+    return out
 
 
 def _nurse_params():
@@ -302,10 +318,9 @@ def _nurse_presets():
     today, fy = date.today(), _fy_start()
     prev = fy.replace(year=fy.year - 1)
     last_m = today.replace(day=1) - timedelta(days=1)
-    be = lambda d: d.year + 543 + 1
     out = [
-        ("ปีงบ " + str(be(fy)), fy, today),
-        ("ปีงบ " + str(be(prev)), prev, fy - timedelta(days=1)),
+        (_fy_label(fy), fy, today),
+        (_fy_label(prev), prev, fy - timedelta(days=1)),
         ("2 ปีงบล่าสุด", prev, today),
         # ถอย 330 วันจากวันที่ 1 ของเดือนล่าสุด ตกในเดือนที่ 11 ก่อนหน้าเสมอ
         ("12 เดือนที่ครบ", (last_m.replace(day=1) - timedelta(days=330)).replace(day=1), last_m),
