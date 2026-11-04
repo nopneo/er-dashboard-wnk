@@ -6,6 +6,7 @@
     ชื่อของรหัสที่ใช้ % ของ visit ER และรหัสอื่นที่ชื่อตรงกลุ่ม (เสนอค่า env ให้)
   - แผนก ER (ER_DEPCODE) มีจริงและชื่อเป็นห้องฉุกเฉิน · ระดับความเร่งด่วน 1–5
   - ความครบของข้อมูลใน er_regist และแหล่งเวลาพบแพทย์ (เสนอคอลัมน์ service_time ถ้าคอลัมน์ที่ใช้ไม่มีข้อมูล)
+  - Fast track: ICD-10 ของแต่ละกลุ่ม · หัตถการ ER ที่ผูก ICD-9 ของ ECG / CPR / Defib · ยาละลายลิ่มเลือด · GCS
 แสดงเฉพาะจำนวนนับและชื่อรหัส ไม่มีข้อมูลรายคน
 """
 
@@ -370,6 +371,113 @@ def _providers(a, total):
     return _group_audit(rows, _lookup("provider_type", "provider_type_code"), PROVIDER_GROUPS, total)
 
 
+#: fast track (บล็อก 19-22) — ICD-10: (key, ชื่อ, มีผลกับ) · หัตถการ ER: (key, ชื่อ, คำในชื่อหัตถการ, มีผลกับ)
+FT_ICD_GROUPS = [("stroke", "Stroke (ICD-10)", "บล็อก 19"), ("stemi", "STEMI (ICD-10)", "บล็อก 20"),
+                 ("hi", "บาดเจ็บศีรษะ (ICD-10)", "บล็อก 21"), ("tbi", "TBI (ICD-10)", "บล็อก 21")]
+FT_OPER_GROUPS = [("ecg", "หัตถการ ECG", r"\becg\b|\bekg\b|e\.c\.g|คลื่นไฟฟ้าหัวใจ", "บล็อก 20 Door-to-ECG"),
+                  ("cpr", "หัตถการ CPR", r"\bcpr\b|ฟื้นคืนชีพ", "บล็อก 22"),
+                  ("defib", "หัตถการ Defibrillation", r"defib|ช็อกไฟฟ้า|ช๊อกไฟฟ้า", "บล็อก 22")]
+#: ECG ที่เวลาเริ่มตรงกับเวลาเข้า ER พอดีเกินเท่านี้ (%) → สงสัยว่าเป็นค่าตั้งต้น
+ECG_ZERO_WARN_PCT = 30.0
+_ER_OPER = ("from er_regist e join ovst o on o.vn = e.vn join er_regist_oper x on x.vn = e.vn "
+            "join er_oper_code c on c.er_oper_code = x.er_oper_code ")
+_LYTIC = "lower(concat(di.name, ' ', ifnull(di.generic_name, ''))) regexp %(ft_lytic)s"
+
+
+def _ft_icd(a):
+    """ICD-10 ของกลุ่ม fast track: visit ER ที่ตรง + รหัสในตระกูลเดียวกัน (3 หลักแรก) ที่แอปไม่นับ"""
+    fams = tuple(sorted({c[:3] for v in queries.FT_ICD.values() for c in v}))
+    by = {str(r["code"] or "").strip(): num(r["n"]) for r in fetch(
+        f"select d.icd10 code, count(distinct e.vn) n from er_regist e join ovst o on o.vn = e.vn "
+        f"join ovstdiag d on d.vn = e.vn and left(d.icd10, 3) in %(fams)s {W} group by d.icd10", {**a, "fams": fams})}
+    cnt = fetch_one("select " + ", ".join(
+        f"sum(exists(select 1 from ovstdiag d where d.vn = e.vn and d.icd10 regexp %(ft_{k})s)) {k}"
+        for k, *_ in FT_ICD_GROUPS) + f" from er_regist e join ovst o on o.vn = e.vn {W}", a) or {}
+    out = []
+    for k, label, impact in FT_ICD_GROUPS:
+        codes = queries.FT_ICD[k]
+        n = num(cnt.get(k))
+        hit = sorted(((c, x) for c, x in by.items() if c.startswith(codes)), key=lambda kv: -kv[1])
+        near = sorted(((c, x) for c, x in by.items() if c[:3] in {p[:3] for p in codes} and not c.startswith(codes)),
+                      key=lambda kv: -kv[1])
+        found = (f"{n:,} visit ER · " + ", ".join(f"{c} ({x:,})" for c, x in hit[:6]) if n
+                 else "ไม่มี visit ER ที่ตรงรหัสในช่วงที่ตรวจ")
+        if near:
+            found += " · รหัสตระกูลเดียวกันที่ไม่นับ: " + ", ".join(f"{c} ({x:,})" for c, x in near[:4])
+        out.append({"label": label, "env": f"ER_FT_{k.upper()}_ICD", "assume": ", ".join(codes), "found": found,
+                    "fix": None if n else f"ตรวจว่า ER ลงรหัสโรคกลุ่มนี้อย่างไร แล้วตั้ง ER_FT_{k.upper()}_ICD",
+                    "impact": impact, "n": n, "status": _status(False, not n)})
+    return out
+
+
+def _ft_oper(a):
+    """หัตถการ ER ที่ผูก ICD-9-CM ของ ECG / CPR / Defib · หัตถการที่ชื่อตรงแต่ ICD-9 ไม่ตรง = แอปไม่นับ"""
+    opers = fetch("select er_oper_code code, name, icd9cm from er_oper_code")
+    used = {str(r["code"]): num(r["n"]) for r in fetch(
+        f"select x.er_oper_code code, count(distinct e.vn) n {_ER_OPER} {W} group by x.er_oper_code", a)}
+    out = []
+    for k, label, kw, impact in FT_OPER_GROUPS:
+        codes = queries.FT_ICD9[k]
+        icd9 = lambda o: str(o.get("icd9cm") or "").replace(".", "").strip()
+        mapped = [o for o in opers if icd9(o) in codes]
+        cand = [o for o in opers if icd9(o) not in codes and re.search(kw, str(o.get("name") or ""), re.I)
+                and used.get(str(o["code"]))]
+        n = sum(used.get(str(o["code"]), 0) for o in mapped)
+        nm = lambda o: f"{o['code']} {str(o.get('name') or '').strip()} ({used.get(str(o['code']), 0):,} visit)"
+        found = ("ผูกกับ: " + ", ".join(nm(o) for o in mapped) if mapped
+                 else f"ไม่มีหัตถการ ER ที่ใส่ ICD-9 {', '.join(codes)}")
+        status = _status(not mapped and bool(cand), not mapped or bool(cand))
+        if k == "ecg" and n:
+            z = fetch_one(f"select count(*) n, sum({queries._ECG_M} = 0) z {_ER_OPER} {W} "
+                          "and replace(c.icd9cm, '.', '') in %(ft_ecg)s and x.begin_time is not null", a) or {}
+            zp = queries._pct(num(z.get("z")), num(z.get("n")))
+            found += f" · เวลาเริ่มตรงกับเวลาเข้า ER พอดี {zp}%"
+            if zp >= ECG_ZERO_WARN_PCT:
+                found += " (สงสัยเป็นค่าตั้งต้น — Door-to-ECG จะเร็วกว่าจริง)"
+                status = _status(status == "bad", True)
+        if cand:
+            found += " · ชื่อตรงแต่ ICD-9 ไม่ตรง (ไม่นับ): " + ", ".join(
+                nm(o) + f" ICD-9 {icd9(o) or 'ว่าง'}" for o in cand)
+        fix = None
+        if cand:
+            fix = (f"ใส่ icd9cm = {codes[0]} ให้หัตถการ " + ", ".join(str(o["code"]) for o in cand)
+                   + " ใน HOSxP (er_oper_code)")
+        elif not mapped:
+            fix = f"ใส่ icd9cm = {codes[0]} ให้{label}ของ ER ใน HOSxP หรือตั้ง ER_FT_{k.upper()}_ICD9"
+        out.append({"label": label, "env": f"ER_FT_{k.upper()}_ICD9", "assume": ", ".join(codes), "found": found,
+                    "fix": fix, "impact": impact, "n": n, "status": status})
+    return out
+
+
+def _ft_lytic(a):
+    """ยาละลายลิ่มเลือด — จับจากชื่อยา (ไม่มี env) · แสดงยาที่ตรงและจำนวน visit ER ที่สั่ง"""
+    drugs = fetch(f"select di.icode code, di.name from drugitems di where {_LYTIC}", a)
+    used = {str(r["code"]): num(r["n"]) for r in fetch(
+        f"select x.icode code, count(distinct e.vn) n from er_regist e join ovst o on o.vn = e.vn "
+        f"join opitemrece x on x.vn = e.vn join drugitems di on di.icode = x.icode {W} and {_LYTIC} "
+        "group by x.icode", a)}
+    found = (", ".join(f"{d['code']} {str(d.get('name') or '').strip()} ({used.get(str(d['code']), 0):,} visit)"
+                       for d in drugs) if drugs else "ไม่พบยาที่ชื่อตรงใน drugitems")
+    return {"label": "ยาละลายลิ่มเลือด (drugitems)", "env": None,
+            "assume": "ชื่อยา/ชื่อสามัญมี " + " / ".join(queries.FT_LYTIC_RE.split("|")), "found": found,
+            "fix": None if drugs else "ถ้า รพ. ไม่มียานี้ไม่ต้องแก้ · ถ้ามี ให้แจ้งผู้พัฒนาพร้อมชื่อยาใน drugitems",
+            "impact": "บล็อก 20 Door-to-needle", "status": _status(False, not drugs)}
+
+
+def _ft_gcs(a):
+    """GCS ของผู้บาดเจ็บศีรษะ (er_nursing_detail) — 0/0/0 = ไม่ได้บันทึก"""
+    r = fetch_one(f"""
+        select count(*) n, sum(nd.gcs_e between 1 and 4 and nd.gcs_v between 1 and 5 and nd.gcs_m between 1 and 6) ok
+        from er_regist e join ovst o on o.vn = e.vn left join er_nursing_detail nd on nd.vn = e.vn
+        {W} and exists(select 1 from ovstdiag d where d.vn = e.vn and d.icd10 regexp %(ft_hi)s)""", a) or {}
+    n, ok = num(r.get("n")), num(r.get("ok"))
+    p = queries._pct(ok, n)
+    return {"label": "GCS ของผู้บาดเจ็บศีรษะ (er_nursing_detail)", "env": None, "assume": "gcs_e / gcs_v / gcs_m",
+            "found": f"บันทึก {p}% ({ok:,} จาก {n:,} ราย) — ไม่บันทึก (0/0/0) หรือเกินช่วง = “ไม่บันทึก”",
+            "fix": "บันทึก GCS ในแบบบันทึกอุบัติเหตุ (ER) ทุกรายที่บาดเจ็บศีรษะ" if n and p < TIME_WARN_PCT else None,
+            "impact": "บล็อก 21 แบ่งความรุนแรง", "status": _status(False, bool(n) and p < TIME_WARN_PCT)}
+
+
 def audit(d1, d2):
     """Data Audit ทั้งหมด + สรุปเรื่องที่ควรแก้ (ใช้ทั้งหน้า /check และ setup_check.py)"""
     a = _args(d1, d2)
@@ -405,6 +513,10 @@ def audit(d1, d2):
         codes.append(res[k]["summary"] if "error" not in res[k] else {"label": k, **res[k]})
     codes.append(res["st"])
     codes += res["providers"].get("summary", []) if "error" not in res["providers"] else []
+    for label, fn in (("Fast track (ICD-10)", _ft_icd), ("Fast track (หัตถการ ER)", _ft_oper),
+                      ("ยาละลายลิ่มเลือด", lambda x: [_ft_lytic(x)]), ("GCS", lambda x: [_ft_gcs(x)])):
+        r = _safe(fn, a)
+        codes += r if isinstance(r, list) else [{"label": label, **r}]
     res["codes"] = codes
 
     issues = [f"ค่า env รูปแบบผิด ใช้ค่าเริ่มต้นแทน: {e}" for e in queries.CODE_ERRORS]

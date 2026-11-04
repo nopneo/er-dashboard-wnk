@@ -1,6 +1,6 @@
 # ER Dashboard — แดชบอร์ดบริหารจัดการห้องฉุกเฉิน (HOSxP)
 
-> **เวอร์ชัน 1.3.1** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
+> **เวอร์ชัน 1.4.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
 > ดาวน์โหลดชุดติดตั้ง: [Releases](https://github.com/nopneo/er-dashboard-wnk/releases/latest) · สรุปขั้นตอน: [INSTALL.md](INSTALL.md) ·
 > ความปลอดภัย: [SECURITY.md](SECURITY.md) · การเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
 
@@ -49,8 +49,12 @@ python render.py --d1 2026-09-01 --d2 2026-09-30 --fmt jpg
 | 16 | From OPD | ลงทะเบียนครั้งแรกที่แผนกอื่น (`ovst.main_dep`) แล้วส่งมา ER |
 | 17 | Red > 60 min | ระดับ 1 ที่ Admit/Refer อยู่ใน ER เกิน 60 นาที |
 | 18 | Mass Casualty | ผู้บาดเจ็บสาเหตุกลุ่มเดียวกัน ≥ 5 รายใน 60 นาที (หน้าต่างเลื่อน) พร้อมรหัส ICD |
+| 19 | Stroke | ICD-10 I60–I64 · Door-in-door-out (เข้า ER → `referout`) เทียบเป้า 60 นาที · ส่งต่อ / Admit |
+| 20 | STEMI | ICD-10 I21.0–3, I21.9, I22 · Door-to-ECG (หัตถการ ER ICD-9 89.52) · Door-to-needle (สั่งยาละลายลิ่มเลือด) · Door-in-door-out |
+| 21 | Head Injury | ICD-10 S00–S09 · TBI (S06) · ความรุนแรงตาม GCS (`er_nursing_detail`) · ส่งต่อ / Admit |
+| 22 | CPR | หัตถการ ER ICD-9 99.60 · ROSC ประมาณจาก CPR แล้วได้ส่งต่อ/Admit · Defibrillation (99.62) |
 
-ตัวเลขทุกตัวมาจากฐานข้อมูลจริง ไม่มีค่าสมมติ · ไม่แสดงจำนวนผู้เสียชีวิต
+ตัวเลขทุกตัวมาจากฐานข้อมูลจริง ไม่มีค่าสมมติ · ไม่แสดงจำนวนผู้เสียชีวิต (บล็อก CPR แสดงเฉพาะ ROSC)
 
 ## รายงานพยาบาลตรวจแทนแพทย์ 16:00–20:00 น. (`/nurse`)
 

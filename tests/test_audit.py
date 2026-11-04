@@ -199,3 +199,41 @@ def test_setup_check_counts_only_hosxp_database_and_global():
     assert setup_check.risky_privs(lines, "test") == ["DELETE", "INSERT", "UPDATE"]
     assert setup_check.risky_privs(["GRANT INSERT ON *.* TO `x`@`%`"], "hos") == ["INSERT"]
     assert setup_check.risky_privs(["GRANT UPDATE ON `hos`.`ovst` TO `x`@`%`"], "hos") == ["UPDATE"]
+
+
+# ------------------------------------------------------------- fast track
+
+def test_ft_oper_flags_named_procedure_without_icd9(monkeypatch):
+    _fake(monkeypatch, {"from er_oper_code": [
+        {"code": "109", "name": "E.C.G. (Electrocardiography)", "icd9cm": "89.52"},
+        {"code": "100", "name": "ค่าช่วยฟื้นคืนชีพ(CPR)", "icd9cm": ""},
+        {"code": "26", "name": "(ยกเลิก) CPR", "icd9cm": ""}],
+        "group by x.er_oper_code": [{"code": "109", "n": 50}, {"code": "100", "n": 3}]}, one={"n": 50, "z": 5})
+    s = {x["env"]: x for x in check._ft_oper({"d1": D1, "d2": D2})}
+    ecg, cpr, defib = s["ER_FT_ECG_ICD9"], s["ER_FT_CPR_ICD9"], s["ER_FT_DEFIB_ICD9"]
+    assert ecg["status"] == "ok" and ecg["n"] == 50 and "109" in ecg["found"] and "10.0%" in ecg["found"]
+    assert cpr["status"] == "bad" and "100" in cpr["fix"] and "26" not in cpr["fix"]    # ไม่ได้ใช้ ไม่เสนอ
+    assert defib["status"] == "warn" and defib["fix"]
+
+
+def test_ft_oper_warns_ecg_default_time(monkeypatch):
+    _fake(monkeypatch, {"from er_oper_code": [{"code": "109", "name": "ECG", "icd9cm": "8952"}],
+                        "group by x.er_oper_code": [{"code": "109", "n": 10}]}, one={"n": 10, "z": 6})
+    ecg = check._ft_oper({"d1": D1, "d2": D2})[0]
+    assert ecg["status"] == "warn" and "ค่าตั้งต้น" in ecg["found"]
+
+
+def test_ft_icd_lists_family_codes_not_counted(monkeypatch):
+    _fake(monkeypatch, {"left(d.icd10, 3) in": [{"code": "I219", "n": 15}, {"code": "I214", "n": 1},
+                                                 {"code": "I64", "n": 20}]},
+          one={"stroke": 20, "stemi": 15, "hi": 0, "tbi": 0})
+    s = {x["env"]: x for x in check._ft_icd({"d1": D1, "d2": D2})}
+    assert s["ER_FT_STEMI_ICD"]["status"] == "ok" and "I214 (1)" in s["ER_FT_STEMI_ICD"]["found"]
+    assert "I219 (15)" in s["ER_FT_STEMI_ICD"]["found"]
+    assert s["ER_FT_HI_ICD"]["status"] == "warn" and s["ER_FT_HI_ICD"]["fix"]
+
+
+def test_dashboard_renders_fast_track(client):
+    html = client.get("/").get_data(as_text=True)
+    for t in ("Stroke", "STEMI", "Head Injury", "CPR", "Door-to-needle", "ROSC"):
+        assert t in html, t

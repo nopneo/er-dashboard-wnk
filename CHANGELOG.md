@@ -1,5 +1,27 @@
 # ประวัติเวอร์ชัน ER Dashboard
 
+## 1.4.0 (4 พ.ย. 2569) — Fast track: Stroke · STEMI · Head injury · CPR
+
+ช่อง fast track ที่ HOSxP มีใน `er_regist` (`stroke_needle_datetime`, `ecg_performed_datetime`, `door_to_needle_second` …)
+ว่างหรือเป็น 0 ที่ รพ.วังน้ำเขียว — บล็อกใหม่จึงวัดจากเวลาที่บันทึกจริงทั้งหมด · บล็อกเดิมไม่เปลี่ยน
+
+1. **บล็อก 19–22** แถวใหม่ท้ายแดชบอร์ด แสดงค่ามัธยฐาน (นาที) เทียบเป้า + % ที่ทันเป้า
+   - **Stroke** (I60–I64): Door-in-door-out = เข้า ER → เวลาส่งต่อ (`referout`) · ส่งต่อ / Admit · EMS นำส่ง
+   - **STEMI** (I21.0–3, I21.9, I22 — ไม่รวม NSTEMI I21.4): Door-to-ECG = เวลาเริ่มหัตถการ ER ที่ ICD-9 89.52
+     · Door-to-needle = เวลาสั่ง streptokinase / alteplase / tenecteplase · Door-in-door-out
+   - **Head injury** (S00–S09, TBI = S06): แบ่ง GCS 13–15 / 9–12 / 3–8 / ไม่บันทึก จาก `er_nursing_detail`
+     (0/0/0 หรือค่านอกช่วง = ไม่บันทึก) · ส่งต่อ / Admit
+   - **CPR** (หัตถการ ICD-9 99.60): ROSC ประมาณจาก “CPR แล้วได้ส่งต่อ/Admit” (ไม่มีเวลา ROSC ในระบบ) · Defibrillation (99.62)
+     · ไม่แสดงจำนวนเสียชีวิต ตามที่ตกลงไว้
+2. **Alert & Action**: STEMI (Door-to-needle / DIDO) และ Stroke DIDO มัธยฐานเกินเป้า โรคละแถว — เกิน 1.5 เท่า = 🚨
+3. **ตั้งได้ด้วย env** (ค่าเริ่มต้นตามข้างบน): `ER_FT_STROKE_ICD` `ER_FT_STEMI_ICD` `ER_FT_HI_ICD` `ER_FT_TBI_ICD`
+   · `ER_FT_ECG_ICD9` `ER_FT_CPR_ICD9` `ER_FT_DEFIB_ICD9` (ใช้ ICD-9-CM ใน `er_oper_code.icd9cm` ไม่ใช่เลขหัตถการของ รพ.)
+   · เป้า `ER_FT_ECG_MIN` (10) `ER_FT_D2N_MIN` (30) `ER_FT_STEMI_DIDO_MIN` (30) `ER_FT_STROKE_DIDO_MIN` (60)
+4. **หน้า `/check`**: visit ER ต่อกลุ่ม ICD + รหัสตระกูลเดียวกันที่ไม่นับ (เช่น I21.4) · หัตถการ ER ที่ผูก ICD-9 ของ ECG/CPR/Defib
+   และหัตถการที่ชื่อตรงแต่ไม่ได้ใส่ ICD-9 (เสนอให้แก้ใน HOSxP) · ECG ที่เวลาเริ่ม = เวลาเข้า ER พอดี (≥ 30% = สงสัยค่าตั้งต้น)
+   · ยาละลายลิ่มเลือดที่พบใน `drugitems` · ความครบของ GCS ในผู้บาดเจ็บศีรษะ
+5. test: SQL ของ fast track ประกอบพารามิเตอร์ได้ · ค่า env ถึง SQL · การคำนวณมัธยฐาน / GCS / ROSC · Data Audit ของหัตถการ
+
 ## 1.3.1 (3 พ.ย. 2569) — แยกยอด EMS ALS / FR
 
 - บล็อกโปรไฟล์ "ช่องทางมาถึง": แถว **EMS ALS/FR** แสดงยอดแยกใต้แถว เช่น `ALS 200 / FR 315`

@@ -22,6 +22,7 @@
 
 import os
 import re
+import statistics
 import threading
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
@@ -72,6 +73,17 @@ DCH = {k: _codes(f"ER_DCH_{k.upper()}", d, ints=True) for k, d in (
 ER_DEPCODE = _codes("ER_DEPCODE", "011")[0]
 NOT_DEPT = _codes("ER_NOT_DEPCODES", "999")
 
+#: Fast track (บล็อก 19-22) — ICD-10 ขึ้นต้นด้วยรหัสเหล่านี้ (ไม่มีจุด เช่น I210)
+#: STEMI รวม I21.9 / I22 เพราะ ER มักลงรหัส MI ไม่ระบุชนิด · ไม่รวม NSTEMI (I21.4)
+FT_ICD = {k: _codes(f"ER_FT_{k.upper()}_ICD", d) for k, d in (
+    ("stroke", "I60,I61,I62,I63,I64"), ("stemi", "I210,I211,I212,I213,I219,I22"),
+    ("hi", "S00,S01,S02,S03,S04,S05,S06,S07,S08,S09"), ("tbi", "S06"))}
+#: หัตถการ ER (er_oper_code.icd9cm) — ICD-9-CM เป็นรหัสกลาง ไม่ขึ้นกับเลขหัตถการของแต่ละ รพ.
+FT_ICD9 = {k: _codes(f"ER_FT_{k.upper()}_ICD9", d) for k, d in (
+    ("ecg", "8952"), ("cpr", "9960"), ("defib", "9962"))}
+#: ยาละลายลิ่มเลือด — จับจากชื่อยา/ชื่อสามัญ (icode ของแต่ละ รพ. ไม่เหมือนกัน)
+FT_LYTIC_RE = "streptokinase|alteplase|tenecteplase"
+
 #: พารามิเตอร์ของทุกคำสั่ง SQL ในโมดูลนี้ (และรายงานพยาบาล)
 P = {
     "walkin": WALKIN_CODES, "appt": APPT_CODES, "refer_in": REFER_IN_CODES,
@@ -80,6 +92,9 @@ P = {
     **{f"dch_{k}": v for k, v in DCH.items()},
     "dch_ar": DCH["refer"] + DCH["admit"], "dch_ama": DCH["refuse"] + DCH["escape"],
     "er_dep": ER_DEPCODE, "not_dep": (ER_DEPCODE,) + NOT_DEPT,
+    **{f"ft_{k}": "^(" + "|".join(v) + ")" for k, v in FT_ICD.items()},
+    **{f"ft_{k}": v for k, v in FT_ICD9.items()},
+    "ft_lytic": FT_LYTIC_RE,
 }
 
 
@@ -703,9 +718,103 @@ def mass_casualty(d1, d2, shift):
             "more": max(len(events) - 8, 0), "min": MCI_MIN, "window": MCI_WINDOW}
 
 
+# ------------------------------------- 19-22. Fast track: Stroke · STEMI · Head injury · CPR
+# ช่อง fast track ของ HOSxP (er_regist.stroke_needle_datetime, ecg_performed_datetime, door_to_needle_second …)
+# ว่างหรือเป็น 0 ทั้งหมดที่ รพ.วังน้ำเขียว — จึงวัดจากเวลาที่บันทึกจริง:
+#   ECG = เวลาเริ่มหัตถการ ER (er_regist_oper.begin_time) · ยาละลายลิ่มเลือด = เวลาสั่งยา (opitemrece)
+#   DIDO (door-in-door-out) = เข้า ER → เวลาส่งต่อ (referout) · GCS = er_nursing_detail (แบบบันทึกอุบัติเหตุ)
+#   CPR = หัตถการ ICD-9 99.60 · ROSC ประมาณจาก "CPR แล้วได้ส่งต่อ/Admit" (ไม่มีเวลา ROSC ในระบบ)
+
+FT_ECG_MIN = int(os.getenv("ER_FT_ECG_MIN", "10"))
+FT_D2N_MIN = int(os.getenv("ER_FT_D2N_MIN", "30"))
+FT_STEMI_DIDO_MIN = int(os.getenv("ER_FT_STEMI_DIDO_MIN", "30"))
+FT_STROKE_DIDO_MIN = int(os.getenv("ER_FT_STROKE_DIDO_MIN", "60"))
+
+
+def _oper(key):
+    return ("er_regist_oper x join er_oper_code c on c.er_oper_code = x.er_oper_code "
+            f"where x.vn = e.vn and replace(c.icd9cm, '.', '') in %(ft_{key})s")
+
+
+def _dx(key):
+    return f"exists(select 1 from ovstdiag d where d.vn = e.vn and d.icd10 regexp %(ft_{key})s)"
+
+
+# begin_time เก็บเป็น TIME ของวันมา — ข้ามเที่ยงคืนต้องบวก 1 วัน (แบบเดียวกับ service_time)
+_ECG_RAW = "timestampdiff(minute, e.enter_er_time, timestamp(date(e.enter_er_time), x.begin_time))"
+_ECG_M = f"(case when {_ECG_RAW} < -60 then {_ECG_RAW} + 1440 else {_ECG_RAW} end)"
+
+
+def _median(v):
+    return round(statistics.median(v)) if v else None
+
+
+def _ft_time(v, target):
+    """มัธยฐานนาที + % ที่ทันเป้า + สถานะเทียบเป้า (แบบเดียวกับบล็อก 3)"""
+    m = _median(v)
+    return {"median": m, "n": len(v), "target": target, "ok_pct": _pct(sum(x <= target for x in v), len(v)),
+            "status": "flat" if m is None else "good" if m <= target else "watch" if m <= target * 1.5 else "bad"}
+
+
+def _gcs(r):
+    """GCS รวม 3-15 · ไม่ได้บันทึก (0/0/0) หรือพิมพ์ผิด (E > 4, V > 5, M > 6) = None"""
+    e, v, m = (num(r.get(k), None) for k in ("ge", "gv", "gm"))
+    if None in (e, v, m) or not (1 <= e <= 4 and 1 <= v <= 5 and 1 <= m <= 6):
+        return None
+    return int(e + v + m)
+
+
+def fast_track(d1, d2, shift):
+    rows = fetch(f"""
+        select {_dx('stroke')} stroke, {_dx('stemi')} stemi, {_dx('hi')} hi, {_dx('tbi')} tbi,
+          exists(select 1 from {_oper('cpr')}) cpr, exists(select 1 from {_oper('defib')}) defib,
+          e.er_dch_type dch, o.ovstist in %(ems)s ems,
+          (select min(case when {_ECG_M} between 0 and {D2D_MAX} then {_ECG_M} end)
+             from {_oper('ecg')} and x.begin_time is not null) ecg,
+          (select min(timestampdiff(minute, e.enter_er_time, timestamp(x.rxdate, x.rxtime)))
+             from opitemrece x join drugitems di on di.icode = x.icode
+             where x.vn = e.vn and timestamp(x.rxdate, x.rxtime) >= e.enter_er_time
+               and lower(concat(di.name, ' ', ifnull(di.generic_name, ''))) regexp %(ft_lytic)s) lytic,
+          (select min(timestampdiff(minute, e.enter_er_time, timestamp(r.refer_date, r.refer_time)))
+             from referout r where r.vn = e.vn) refer_m,
+          nd.gcs_e ge, nd.gcs_v gv, nd.gcs_m gm
+        {FROM} left join er_nursing_detail nd on nd.vn = e.vn {_where(d1, d2, shift)}
+        having stroke or stemi or hi or cpr""", P)
+
+    def grp(k):
+        return [r for r in rows if num(r.get(k))]
+
+    def mins(g, k, hi=1440):
+        return [num(r[k]) for r in g if r.get(k) not in (None, "") and 0 <= num(r[k]) <= hi]
+
+    def disp(g):
+        dch = [int(num(r.get("dch"), 0)) for r in g]
+        n, ref = len(g), sum(x in DCH["refer"] for x in dch)
+        return {"n": n, "ems": sum(bool(num(r.get("ems"))) for r in g), "refer": ref, "refer_pct": _pct(ref, n),
+                "admit": sum(x in DCH["admit"] for x in dch)}
+
+    st, mi, hi, cpr = grp("stroke"), grp("stemi"), grp("hi"), grp("cpr")
+    refer = lambda g: [r for r in g if int(num(r.get("dch"), 0)) in DCH["refer"]]
+    gcs = [_gcs(r) for r in hi]
+    rosc = sum(int(num(r.get("dch"), 0)) in P["dch_ar"] for r in cpr)
+    return {
+        "stroke": {**disp(st), "dido": _ft_time(mins(refer(st), "refer_m"), FT_STROKE_DIDO_MIN)},
+        "stemi": {**disp(mi), "ecg": _ft_time(mins(mi, "ecg"), FT_ECG_MIN),
+                  "lytic": len(mins(mi, "lytic")), "d2n": _ft_time(mins(mi, "lytic"), FT_D2N_MIN),
+                  "dido": _ft_time(mins(refer(mi), "refer_m"), FT_STEMI_DIDO_MIN)},
+        "hi": {**disp(hi), "tbi": len(grp("tbi")),
+               "mild": sum(g is not None and g >= 13 for g in gcs),
+               "moderate": sum(g is not None and 9 <= g <= 12 for g in gcs),
+               "severe": sum(g is not None and g <= 8 for g in gcs),
+               "no_gcs": sum(g is None for g in gcs), "gcs_pct": _pct(sum(g is not None for g in gcs), len(gcs))},
+        "cpr": {**disp(cpr), "rosc": rosc, "rosc_pct": _pct(rosc, len(cpr)),
+                "defib": sum(bool(num(r.get("defib"))) for r in cpr)},
+    }
+
+
 # ------------------------------------------------------ 10. Alert & Action
 
-def alerts(kpi, tri, ttd, q, load, red=None, mci=None):
+def alerts(kpi, tri, ttd, q, load, red=None, mci=None, ft=None):
     out = []
     if red and red["over"] > 0:
         out.append({"level": "high", "issue": f"สีแดงอยู่ ER เกิน {red['cutoff']} นาที {red['over']} ราย "
@@ -715,6 +824,16 @@ def alerts(kpi, tri, ttd, q, load, red=None, mci=None):
     if mci and mci["count"] > 0:
         out.append({"level": "mid", "issue": f"อุบัติเหตุหมู่ {mci['count']} ครั้ง ({mci['patients']} ราย)",
                     "where": "ER", "status": "ทบทวน", "action": "ทบทวนการรับมือ (After Action Review)"})
+    # fast track — มัธยฐานเกินเป้า (เวลาที่บันทึกจริง: สั่งยา / ส่งต่อ) · โรคละแถว
+    for key, name, parts, action in (
+            ("stemi", "STEMI", (("d2n", "ได้ยาละลายลิ่มเลือด"), ("dido", "ส่งต่อ (DIDO)")),
+             "ทบทวน STEMI fast track (อ่าน ECG → ให้ยา / ประสานส่งต่อ)"),
+            ("stroke", "Stroke", (("dido", "ส่งต่อ (DIDO)"),), "ทบทวน Stroke fast track (ประสานส่งต่อ)")):
+        late = [(lbl, ft[key][k]) for k, lbl in parts if ft and ft[key][k]["status"] in ("watch", "bad")]
+        if late:
+            txt = " · ".join(f"{lbl} มัธยฐาน {t['median']} นาที (เป้า ≤ {t['target']}, {t['n']} ราย)" for lbl, t in late)
+            out.append({"level": "high" if any(t["status"] == "bad" for _, t in late) else "mid",
+                        "issue": f"{name} {txt}", "where": "ER", "status": "ทบทวน", "action": action})
     # เวลาพบแพทย์มาจากเวลาที่บันทึกในระบบ ไม่ใช่เวลาตรวจจริง — แสดงเป็นข้อสังเกตด้านการบันทึกเท่านั้น
     late = [it for it in tri["items"][:2] if it["status"] in ("watch", "bad") and it["d2d"] is not None]
     if late:
@@ -821,6 +940,7 @@ def _build(d1, d2, shift, key):
         "opd": (from_opd, d1, d2, shift),
         "red": (red_over, d1, d2, shift),
         "mci": (mass_casualty, d1, d2, shift),
+        "ft": (fast_track, d1, d2, shift),
     }
     with ThreadPoolExecutor(max_workers=6) as ex:
         futs = {k: ex.submit(f, *a) for k, (f, *a) in jobs.items()}
@@ -831,7 +951,7 @@ def _build(d1, d2, shift, key):
         "period_label": _thai_range(d1, d2),
         "d1": d1, "d2": d2, "shift": shift, "shift_name": SHIFTS[shift], "shifts": SHIFTS,
         "alerts": alerts(data["kpi"], data["triage"], data["ttd"], data["quality"], data["load"],
-                         data["red"], data["mci"]),
+                         data["red"], data["mci"], data["ft"]),
     })
     if CACHE_TTL:
         _cache[key] = (_time.time(), data)
