@@ -65,7 +65,10 @@
     {% endfor %}
   </select>
   <button type="submit">ดูข้อมูล</button>
-  {% set q = '?d1=' ~ d.d1 ~ '&d2=' ~ d.d2 ~ '&shift=' ~ d.shift %}
+  <span class="presets">
+    {% for p in presets %}<a href="?d1={{ p.d1 }}&d2={{ p.d2 }}&shift={{ d.shift }}" class="{{ 'on' if p.d1 == d.d1 and p.d2 == d.d2 }}">{{ p.label }}</a>{% endfor %}
+  </span>
+  {% set q ='?d1=' ~ d.d1 ~ '&d2=' ~ d.d2 ~ '&shift=' ~ d.shift %}
   {% if export_enabled %}
   <a class="dl" href="{{ url_for('export', fmt='jpg') }}{{ q }}">⬇ JPG</a>
   <a class="dl" href="{{ url_for('export', fmt='png') }}{{ q }}">⬇ PNG</a>

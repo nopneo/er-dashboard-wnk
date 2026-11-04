@@ -1,6 +1,6 @@
 # ER Dashboard — แดชบอร์ดบริหารจัดการห้องฉุกเฉิน (HOSxP)
 
-> **เวอร์ชัน 1.4.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
+> **เวอร์ชัน 1.4.1** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
 > ดาวน์โหลดชุดติดตั้ง: [Releases](https://github.com/nopneo/er-dashboard-wnk/releases/latest) · สรุปขั้นตอน: [INSTALL.md](INSTALL.md) ·
 > ความปลอดภัย: [SECURITY.md](SECURITY.md) · การเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
 
@@ -25,7 +25,7 @@ python app.py                 # http://127.0.0.1:6200/   (debug ปิด เป
 python render.py --d1 2026-09-01 --d2 2026-09-30 --fmt jpg
 ```
 
-เลือกช่วงวันที่และเวรจากแถบด้านบน (`?d1=YYYY-MM-DD&d2=YYYY-MM-DD&shift=all|D|C|B`) · API ดิบ `GET /api/data.json`
+เลือกช่วงวันที่และเวรจากแถบด้านบน หรือกดปุ่มลัด **ปีงบประมาณ** (ปีปัจจุบัน + ย้อนหลัง 2 ปี, 1 ต.ค. – 30 ก.ย.) (`?d1=YYYY-MM-DD&d2=YYYY-MM-DD&shift=all|D|C|B`) · API ดิบ `GET /api/data.json`
 · test (ไม่ต่อฐานข้อมูลจริง): `pip install -r requirements-dev.txt` แล้ว `python -m pytest`
 
 ## บล็อกในรายงาน
