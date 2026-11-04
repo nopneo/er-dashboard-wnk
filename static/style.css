@@ -143,6 +143,25 @@ body {
 .row.c2 { grid-template-columns: 1.36fr 1fr; }
 .row.c3e { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .row.c3m { grid-template-columns: minmax(0, 1fr) minmax(0, .9fr) minmax(0, 1.45fr); }
+.row.c4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* fast track (บล็อก 19-22): แถวตัวชี้วัด ค่ามัธยฐาน + ป้ายเป้า */
+.ftm { margin-top: 10px; }
+.ftm .m { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          padding: 8px 0; border-top: 1px dashed var(--rose-b); }
+.ftm .m .l { font-family: 'Kanit'; font-weight: 500; font-size: 14.5px; color: var(--maroon); line-height: 1.25; min-width: 0; }
+.ftm .m .l small { display: block; font-family: 'Sarabun'; font-weight: 400; font-size: 12px; color: var(--muted); }
+.ftm .m .r { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
+.ftm .m .v { font-family: 'Kanit'; font-weight: 700; font-size: 24px; line-height: 1.1; color: var(--red-d); white-space: nowrap; }
+.ftm .m .v .u { font-family: 'Sarabun'; font-weight: 400; font-size: 12.5px; color: var(--muted); margin-left: 3px; }
+.ftm .pp { min-width: 0; padding: 1px 9px; font-size: 12px; }
+.ftg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.ftg .g { background: #eef2f7; color: #64748b; border-radius: 12px; padding: 6px 4px; text-align: center;
+          font-size: 11.5px; line-height: 1.2; }
+.ftg .g b { display: block; font-family: 'Kanit'; font-weight: 700; font-size: 20px; }
+.ftg .g.ok { background: #d1fae5; color: #047857; }
+.ftg .g.mid { background: #ffedd5; color: #c2410c; }
+.ftg .g.bad { background: #fee2e2; color: #b91c1c; }
 
 /* บล็อก 16-18 — ตัวเลขใหญ่หัวบล็อก */
 .big { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -391,6 +410,7 @@ table.t.alerts .wm { display: none; }
   .hero .meta .b { font-size: 13px; }
 
   .row.c3, .row.c3b, .row.c2, .row.c3e, .row.c3m { grid-template-columns: minmax(0, 1fr); }
+  .row.c4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .row > .block, .row > div, .block > .body { min-width: 0; }
   .block { padding: 14px 15px 16px; border-radius: 20px; }
   .block > header { flex-wrap: wrap; }
@@ -429,13 +449,14 @@ table.t.alerts .wm { display: none; }
   .bars { height: 112px; }
   .profile > div { padding: 11px; }
   .toolbar .hint { display: none; }
+  .row.c4 { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* จอ 1101-1599px: แถวละ 2 บล็อก, KPI แถวละ 4 */
 @media (max-width: 1599px) and (min-width: 1101px) {
   .row.c3, .row.c3b { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .row.c2 { grid-template-columns: minmax(0, 1fr); }
-  .row.c3e, .row.c3m { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row.c3e, .row.c3m, .row.c4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .row.c3 > :nth-child(3), .row.c3b > :nth-child(3), .row.c3e > :nth-child(3),
   .row.c3m > :nth-child(3) { grid-column: 1 / -1; }
   .row.c3 > :nth-child(3) { flex-direction: row !important; }
@@ -459,6 +480,7 @@ table.t.alerts .wm { display: none; }
 .print-mode .row.c2 { grid-template-columns: 1.36fr 1fr; }
 .print-mode .row.c3e { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .print-mode .row.c3m { grid-template-columns: minmax(0, 1fr) minmax(0, .9fr) minmax(0, 1.45fr); }
+.print-mode .row.c4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .print-mode .row > * { grid-column: auto; }
 .print-mode .row.c3 > :nth-child(3) { flex-direction: column !important; }
 .print-mode .row.c3 > :nth-child(3) > .block { flex: none; }

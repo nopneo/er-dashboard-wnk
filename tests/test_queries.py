@@ -75,7 +75,8 @@ def test_disposition_groups_follow_codes(monkeypatch):
 def test_env_example_lists_code_settings():
     text = open(os.path.join(os.path.dirname(queries.__file__), ".env.example"), encoding="utf-8").read()
     for k in ("ER_WALKIN_CODES", "ER_APPT_CODES", "ER_REFER_IN_CODES", "ER_EMS_ALS_CODES", "ER_EMS_FR_CODES",
-              "ER_PDX_DIAGTYPE", "ER_SVC_PT_TYPES", "ER_AUTOPSY_PT_TYPES", "ER_DCH_ADMIT", "ER_DATA_AUDITED"):
+              "ER_PDX_DIAGTYPE", "ER_SVC_PT_TYPES", "ER_AUTOPSY_PT_TYPES", "ER_DCH_ADMIT", "ER_DATA_AUDITED",
+              "ER_FT_STROKE_ICD", "ER_FT_STEMI_ICD", "ER_FT_HI_ICD", "ER_FT_ECG_ICD9", "ER_FT_CPR_ICD9"):
         assert k in text, k
 
 
@@ -86,3 +87,73 @@ def test_ems_row_shows_als_fr_split(monkeypatch):
     ems = next(i for i in queries.patient_profile(D1, D2, "all")["arrival"] if i["label"] == "EMS ALS/FR")
     assert ems["value"] == 515
     assert ems["parts"] == [{"label": "ALS", "value": 200}, {"label": "FR", "value": 315}]
+
+
+# ---------------------------------------------------------- 19-22. Fast track
+
+def test_fast_track_default_codes_reach_sql(fake_db):
+    queries.build(D1, D2, "all")
+    sql = _bound(fake_db)
+    for frag in ("d.icd10 regexp '^(I60|I61|I62|I63|I64)'", "d.icd10 regexp '^(I210|I211|I212|I213|I219|I22)'",
+                 "d.icd10 regexp '^(S06)'", "replace(c.icd9cm, '.', '') in ('8952')",
+                 "replace(c.icd9cm, '.', '') in ('9960')", "regexp 'streptokinase|alteplase|tenecteplase'"):
+        assert frag in sql, frag
+
+
+def test_fast_track_env_codes_reach_sql(fake_db, monkeypatch):
+    monkeypatch.setitem(queries.P, "ft_stroke", "^(I63|G45)")
+    monkeypatch.setitem(queries.P, "ft_ecg", ("8952", "8951"))
+    queries.fast_track(D1, D2, "all")
+    sql = _bound(fake_db)
+    assert "regexp '^(I63|G45)'" in sql and "in ('8952','8951')" in sql
+
+
+def _ft_row(**kw):
+    r = {"stroke": 0, "stemi": 0, "hi": 0, "tbi": 0, "cpr": 0, "defib": 0, "dch": 1, "ems": 0,
+         "ecg": None, "lytic": None, "refer_m": None, "ge": None, "gv": None, "gm": None}
+    r.update(kw)
+    return r
+
+
+def test_fast_track_aggregates(monkeypatch):
+    rows = [
+        _ft_row(stemi=1, dch=2, ems=1, ecg=4, lytic=25, refer_m=50),
+        _ft_row(stemi=1, dch=2, ecg=12, lytic=60, refer_m=70),
+        _ft_row(stemi=1, dch=3, ecg="", refer_m=None),               # ไม่มี ECG / admit
+        _ft_row(stroke=1, dch=2, refer_m=40), _ft_row(stroke=1, dch=2, refer_m=-5),   # เวลาส่งต่อติดลบ = ไม่นับ
+        _ft_row(stroke=1, dch=3, refer_m=30),                       # admit — ไม่นับใน DIDO
+        _ft_row(hi=1, ge=4, gv=5, gm=6), _ft_row(hi=1, tbi=1, ge=2, gv=2, gm=4, dch=2),
+        _ft_row(hi=1, ge=0, gv=0, gm=0), _ft_row(hi=1, ge=40, gv=5, gm=6), _ft_row(hi=1, ge=3, gv=4, gm=5),
+        _ft_row(cpr=1, defib=1, dch=2), _ft_row(cpr=1, dch=6), _ft_row(cpr=1, dch=4, ems=1),
+    ]
+    monkeypatch.setattr(queries, "fetch", lambda sql, args=None: rows)
+    ft = queries.fast_track(D1, D2, "all")
+    mi = ft["stemi"]
+    assert mi["n"] == 3 and mi["refer"] == 2 and mi["admit"] == 1 and mi["ems"] == 1
+    assert mi["ecg"]["median"] == 8 and mi["ecg"]["n"] == 2 and mi["ecg"]["ok_pct"] == 50.0
+    assert mi["lytic"] == 2 and mi["d2n"]["median"] == 42 and mi["d2n"]["status"] == "watch"
+    assert mi["dido"]["median"] == 60 and mi["dido"]["status"] == "bad"
+    st = ft["stroke"]
+    assert st["n"] == 3 and st["dido"]["n"] == 1 and st["dido"]["median"] == 40 and st["dido"]["status"] == "good"
+    hi = ft["hi"]
+    assert (hi["n"], hi["tbi"], hi["mild"], hi["moderate"], hi["severe"], hi["no_gcs"]) == (5, 1, 1, 1, 1, 2)
+    assert hi["gcs_pct"] == 60.0
+    assert ft["cpr"]["rosc"] == 1 and ft["cpr"]["rosc_pct"] == 33.3 and ft["cpr"]["defib"] == 1
+
+
+def test_fast_track_empty_and_alert(monkeypatch):
+    monkeypatch.setattr(queries, "fetch", lambda sql, args=None: [])
+    ft = queries.fast_track(D1, D2, "all")
+    assert ft["stemi"]["d2n"]["median"] is None and ft["stemi"]["d2n"]["status"] == "flat"
+    assert ft["cpr"]["rosc_pct"] == 0.0
+    kpi = {"revisit_rate": 0, "d2d_cover": 100}
+    tri = {"items": [], "missing_pct": 0}
+    ttd = {"admit": {"over": 0}, "refer": {"over": 0}, "cutoff": 120}
+    q = {"ama": 0}
+    assert not any("STEMI" in a["issue"] for a in queries.alerts(kpi, tri, ttd, q, [], ft=ft))
+    ft["stemi"]["d2n"] = queries._ft_time([50, 70], queries.FT_D2N_MIN)
+    a = [x for x in queries.alerts(kpi, tri, ttd, q, [], ft=ft) if "STEMI" in x["issue"]]
+    assert len(a) == 1 and a[0]["level"] == "high" and "60 นาที" in a[0]["issue"]
+    ft["stemi"]["dido"] = queries._ft_time([40], queries.FT_STEMI_DIDO_MIN)          # ไม่เกิน 1.5 เท่า
+    a = [x for x in queries.alerts(kpi, tri, ttd, q, [], ft=ft) if "STEMI" in x["issue"]]
+    assert len(a) == 1 and "ได้ยาละลายลิ่มเลือด" in a[0]["issue"] and "DIDO" in a[0]["issue"]

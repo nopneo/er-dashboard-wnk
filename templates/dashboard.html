@@ -588,10 +588,82 @@
     </section>
   </div>
 
+  <!-- ============================== 19-22. fast track: stroke | stemi | head injury | cpr -->
+  {% set ft = d.ft %}
+  {% macro ftm(label, t) %}
+    <div class="m"><span class="l">{{ label }}<small>{{ t.n }} ราย · ทันเป้า {{ t.ok_pct }}%</small></span>
+      <span class="r"><span class="v">{{ t.median if t.median is not none else '–' }}<span class="u">นาที</span></span>
+        <span class="pp {{ t.status }}">เป้า ≤ {{ t.target }}</span></span></div>
+  {% endmacro %}
+  {% macro ftn(label, value, sub='') %}
+    <div class="m"><span class="l">{{ label }}{% if sub %}<small>{{ sub }}</small>{% endif %}</span>
+      <span class="r"><span class="v">{{ value }}</span></span></div>
+  {% endmacro %}
+  <div class="row c4">
+    <section class="block">
+      <header><span class="no">19</span>
+        <span><span class="t">Stroke</span> <span class="st">โรคหลอดเลือดสมอง</span></span></header>
+      <div class="body">
+        <div class="big"><span class="v">{{ ft.stroke.n }}</span><span class="u">ราย · EMS นำส่ง {{ ft.stroke.ems }}</span></div>
+        <div class="ftm">
+          {{ ftm('🚐 Door-in-door-out', ft.stroke.dido) }}
+          {{ ftn('ส่งต่อ / Admit', ft.stroke.refer ~ ' / ' ~ ft.stroke.admit, 'ส่งต่อ ' ~ ft.stroke.refer_pct ~ '%') }}
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">20</span>
+        <span><span class="t">STEMI</span> <span class="st">กล้ามเนื้อหัวใจขาดเลือด</span></span></header>
+      <div class="body">
+        <div class="big"><span class="v">{{ ft.stemi.n }}</span><span class="u">ราย · EMS นำส่ง {{ ft.stemi.ems }}</span></div>
+        <div class="ftm">
+          {{ ftm('📈 Door-to-ECG', ft.stemi.ecg) }}
+          {{ ftm('💉 Door-to-needle', ft.stemi.d2n) }}
+          {{ ftm('🚐 Door-in-door-out', ft.stemi.dido) }}
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">21</span>
+        <span><span class="t">Head Injury</span> <span class="st">บาดเจ็บศีรษะ · TBI</span></span></header>
+      <div class="body">
+        <div class="big"><span class="v">{{ '{:,}'.format(ft.hi.n) }}</span><span class="u">ราย · TBI (S06) {{ ft.hi.tbi }}</span></div>
+        <div class="ftg">
+          <div class="g ok"><b>{{ ft.hi.mild }}</b>GCS 13–15</div>
+          <div class="g mid"><b>{{ ft.hi.moderate }}</b>GCS 9–12</div>
+          <div class="g bad"><b>{{ ft.hi.severe }}</b>GCS 3–8</div>
+          <div class="g"><b>{{ ft.hi.no_gcs }}</b>ไม่บันทึก</div>
+        </div>
+        <div class="ftm">
+          {{ ftn('ส่งต่อ / Admit', ft.hi.refer ~ ' / ' ~ ft.hi.admit, 'บันทึก GCS ' ~ ft.hi.gcs_pct ~ '% ของราย') }}
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <header><span class="no">22</span>
+        <span><span class="t">CPR</span> <span class="st">ช่วยฟื้นคืนชีพ</span></span></header>
+      <div class="body">
+        <div class="big"><span class="v">{{ ft.cpr.n }}</span><span class="u">ราย · EMS นำส่ง {{ ft.cpr.ems }}</span></div>
+        <div class="ftm">
+          {{ ftn('💓 ROSC (ประมาณ)', ft.cpr.rosc ~ ' ราย', ft.cpr.rosc_pct ~ '% · CPR แล้วได้ส่งต่อ / Admit') }}
+          {{ ftn('⚡ Defibrillation', ft.cpr.defib ~ ' ราย') }}
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="note" style="margin-top:12px">⏱ ค่ามัธยฐาน (นาที) จากเวลาที่บันทึกจริง: ECG = เวลาเริ่มหัตถการ ER ·
+    ยาละลายลิ่มเลือด = เวลาสั่งยา · Door-in-door-out = เข้า ER → เวลาส่งต่อ · GCS จากแบบบันทึกอุบัติเหตุ
+    <span class="nt">แยกกลุ่มจาก ICD-10 ที่ ER ลง (Stroke I60–I64 · STEMI I21.0–3, I21.9, I22 · บาดเจ็บศีรษะ S00–S09) ·
+      CPR = หัตถการ ICD-9 99.60 · ROSC ไม่มีเวลาในระบบ จึงประมาณจากผู้ที่ได้ส่งต่อ/Admit</span></div>
+
   <!-- ============================================================ footer -->
   <div class="foot">
     <div class="src"><b>แหล่งข้อมูล (Data Source)</b> —
-      HOSxP: er_regist / ovst / service_time / lab_head / xray_report / opitemrece / ovstdiag / icd101 / referout / ipt / patient · MariaDB</div>
+      HOSxP: er_regist / ovst / service_time / lab_head / xray_report / opitemrece / ovstdiag / icd101 / referout / ipt / patient
+      / er_regist_oper / er_oper_code / er_nursing_detail / drugitems · MariaDB</div>
     <div class="tag">“ข้อมูลดี ห้องฉุกเฉินดีขึ้น<br>ผู้ป่วยวิกฤตได้รับการดูแลทันเวลา”</div>
   </div>
   <div class="appinfo">
