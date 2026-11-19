@@ -143,6 +143,7 @@
       <span><span class="t">ER KPI Summary</span> <span class="st">ภาพรวมห้องฉุกเฉิน</span></span>
       <span class="filters">
         <span class="chip">📅 {{ d.period_label }}</span>
+        {% if public_view %}<span class="chip" title="เครื่องในโรงพยาบาลเห็นตัวเลขเต็ม">🔒 ข้อมูลสาธารณะ: ช่วงวันที่ปัดเป็นเดือนเต็ม · CPR ที่น้อยกว่า 5 รายแสดงเป็น “&lt;5”</span>{% endif %}
         <span class="chip">🕐 {{ d.shift_name }}</span>
       </span>
     </header>
