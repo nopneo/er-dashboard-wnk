@@ -279,7 +279,11 @@ def _kpi_raw(d1, d2, shift):
 
 def kpi_summary(d1, d2, shift):
     p1, p2 = _prev_range(d1, d2)
-    cur, prev = _kpi_raw(d1, d2, shift), _kpi_raw(p1, p2, shift)
+    # ช่วงปัจจุบันกับช่วงก่อนหน้าเป็นคนละ query กัน — ยิงพร้อมกัน (ช่วงปีงบ ~7 วิ ต่อช่วง เดิมรอต่อกัน ~14 วิ)
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        prev_f = ex.submit(_kpi_raw, p1, p2, shift)
+        cur = _kpi_raw(d1, d2, shift)
+        prev = prev_f.result()
     days = _days(d1, d2)
     n = cur["n"]
     l12 = cur["l1"] + cur["l2"]
@@ -876,7 +880,20 @@ def alerts(kpi, tri, ttd, q, load, red=None, mci=None, ft=None):
 # ------------------------------------------------------------- ประกอบร่าง
 
 CACHE_TTL = int(os.getenv("ER_CACHE_TTL", "120"))
+#: ช่วงวันที่ยาว (เกิน LONG_RANGE_DAYS วัน เช่น รายไตรมาส/ปีงบ) คำนวณนาน (~14 วิ ต่อปีงบ) และใช้ดูภาพรวม
+#: ไม่ต้องสดระดับนาที → เก็บแคชนานกว่า (ER_LONG_CACHE_TTL วินาที, ค่าเริ่มต้น 30 นาที)
+LONG_RANGE_DAYS = int(os.getenv("ER_LONG_RANGE_DAYS", "31"))
+LONG_CACHE_TTL = int(os.getenv("ER_LONG_CACHE_TTL", "1800"))
 _cache = {}
+
+
+def _ttl(key):
+    d1, d2 = key[0], key[1]
+    try:
+        span = _days(d1, d2)
+    except (TypeError, ValueError):
+        return CACHE_TTL
+    return max(CACHE_TTL, LONG_CACHE_TTL) if span > LONG_RANGE_DAYS else CACHE_TTL
 
 #: จำนวนช่วงวันที่ที่คำนวณใหม่พร้อมกันได้ต่อโปรเซส — กันคนยิงช่วงวันที่ไม่ซ้ำรัว ๆ จน HOSxP ช้าทั้งโรงพยาบาล
 MAX_BUILDS = max(1, int(os.getenv("ER_MAX_BUILDS", "2")))
@@ -901,7 +918,7 @@ def build_slot():
 
 def _cached(key):
     hit = _cache.get(key) if CACHE_TTL else None
-    if hit and _time.time() - hit[0] < CACHE_TTL:
+    if hit and _time.time() - hit[0] < _ttl(key):
         return hit[1]
     return None
 
