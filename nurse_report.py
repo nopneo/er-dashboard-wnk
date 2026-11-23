@@ -160,6 +160,7 @@ def _counts(rows):
     out["total"] = len(rows)
     out["pct"] = _pct(out["nurse"], out["total"])
     out["l12"] = sum(r["lvl"] <= 2 for r in rows)
+    out["l35"] = sum(r["lvl"] >= 3 for r in rows)      # ไม่ใช้ชื่อ l345: kpi มี l345 ของเคสที่มีการตรวจ (ความหมายต่างกัน)
     out["z"] = sum(r["pdx"].upper().startswith("Z") for r in rows)
     return out
 
@@ -208,7 +209,7 @@ def _build(d1, d2, key):
     monthly = []
     for ym in sorted(by_month):
         ds = by_month[ym]
-        c = {k: sum(x[k] for x in ds) for k in ("total", "nurse", "doctor", "svc", "other", "l12", "z")}
+        c = {k: sum(x[k] for x in ds) for k in ("total", "nurse", "doctor", "svc", "other", "l12", "l35", "z")}
         full = len(ds) == monthrange(*ym)[1]
         c.update({"ym": ym, "label": _month_label(ym), "fy": _fy(date(ym[0], ym[1], 1)), "days": len(ds),
                   "full": full, "pct": _pct(c["nurse"], c["total"]),
@@ -220,7 +221,7 @@ def _build(d1, d2, key):
     for fy in sorted({m["fy"] for m in monthly}):
         ms = [m for m in monthly if m["fy"] == fy]
         full = [m for m in ms if m["full"]]
-        c = {k: sum(m[k] for m in ms) for k in ("total", "nurse", "doctor", "svc", "other", "l12", "z")}
+        c = {k: sum(m[k] for m in ms) for k in ("total", "nurse", "doctor", "svc", "other", "l12", "l35", "z")}
         nd = sum(m["days"] for m in ms)
         c.update({"fy": fy, "months": len(ms), "full_months": len(full), "days": nd,
                   "complete": nd == (366 if (fy - 543) % 4 == 0 else 365),
@@ -395,10 +396,10 @@ def to_xlsx(d, hospital=""):
     ws.column_dimensions["B"].width = 90
 
     grp_head = ["ผู้ป่วยในช่วงเวลา", "พยาบาลตรวจแทนแพทย์", "% พยาบาลตรวจ", "แพทย์ตรวจ",
-                "พยาบาลให้บริการ", "อื่น ๆ/ไม่ระบุ", "ระดับ 1-2 (ทุกผู้ตรวจ)", "รหัสโรคหลัก Z (ทุกผู้ตรวจ)"]
+                "พยาบาลให้บริการ", "อื่น ๆ/ไม่ระบุ", "ระดับ 1-2 (ทุกผู้ตรวจ)", "ระดับ 3-5 (ทุกผู้ตรวจ)", "รหัสโรคหลัก Z (ทุกผู้ตรวจ)"]
 
     def grp(x):
-        return [x["total"], x["nurse"], x["pct"], x["doctor"], x["svc"], x["other"], x["l12"], x["z"]]
+        return [x["total"], x["nurse"], x["pct"], x["doctor"], x["svc"], x["other"], x["l12"], x["l35"], x["z"]]
 
     # ---- รายปีงบ
     sheet("รายปีงบประมาณ",
@@ -407,7 +408,7 @@ def to_xlsx(d, hospital=""):
           [[y["fy"], y["days"], y["months"], y["full_months"]] + grp(y)
            + [y["per_month"] if y["per_month"] is not None else "–", y["per_day"], y["max_label"], y["min_label"]]
            for y in d["yearly"]],
-          [13, 10, 11, 11, 15, 15, 12, 11, 14, 12, 14, 14, 18, 11, 13, 13])
+          [13, 10, 11, 11, 15, 15, 12, 11, 14, 12, 14, 14, 14, 18, 11, 13, 13])
 
     # ---- รายเดือน + กราฟ
     ms = d["monthly"]
@@ -415,7 +416,7 @@ def to_xlsx(d, hospital=""):
                ["เดือน", "ปีงบ", "เดือน (ค.ศ.)", "จำนวนวัน", "ครบเดือน"] + grp_head + ["เฉลี่ย/วัน"],
                [[m["label"], m["fy"], f"{m['ym'][0]}-{m['ym'][1]:02d}", m["days"], "ครบ" if m["full"] else "ไม่ครบ"]
                 + grp(m) + [m["per_day"]] for m in ms],
-               [11, 8, 12, 10, 10, 15, 15, 12, 11, 14, 12, 14, 14, 11],
+               [11, 8, 12, 10, 10, 15, 15, 12, 11, 14, 12, 14, 14, 14, 11],
                total=["รวม", "", "", k["days"], ""] + grp(k) + [k["per_day"]])
     if ms:
         n = len(ms) + 1
@@ -427,13 +428,13 @@ def to_xlsx(d, hospital=""):
             ch.add_data(Reference(ws, min_col=col, min_row=1, max_row=n), titles_from_data=True)
         ch.set_categories(Reference(ws, min_col=1, min_row=2, max_row=n))
         ch.height, ch.width = 9, max(18, len(ms) * 1.3)
-        ws.add_chart(ch, "P2")
+        ws.add_chart(ch, "Q2")
 
     # ---- รายวัน
     sheet("รายวัน", ["วันที่", "วัน", "วันหยุด", "ปีงบ", "เดือน"] + grp_head,
           [[x["date"], x["weekday"], "หยุด" if x["holiday"] else "", _fy(x["date"]),
             _month_label((x["date"].year, x["date"].month))] + grp(x) for x in d["daily"]],
-          [12, 10, 8, 8, 10, 15, 15, 12, 11, 14, 12, 14, 14],
+          [12, 10, 8, 8, 10, 15, 15, 12, 11, 14, 12, 14, 14, 14],
           total=["รวม", "", "", "", ""] + grp(k))
     wb["รายวัน"].auto_filter.ref = f"A1:K{len(d['daily']) + 1}"
 

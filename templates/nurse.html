@@ -226,6 +226,7 @@
         <tr><th>เดือน</th><th>ปีงบ</th><th>จำนวนวัน</th><th>ผู้ป่วยช่วง {{ win }}</th><th>พยาบาลตรวจแทนแพทย์</th>
           <th>% พยาบาลตรวจ</th><th>เฉลี่ย/วัน</th><th>แพทย์ตรวจ</th><th>พยาบาลให้บริการ</th><th>อื่น ๆ</th>
           <th class="ex first" title="ผู้ป่วยระดับ 1-2 (Resuscitation / Emergency) ที่เข้า ER ในช่วงเวลานี้ — ทุกผู้ตรวจ">ระดับ 1-2</th>
+          <th class="ex" title="ผู้ป่วยระดับ 3-5 (Urgent / Semi-urgent / Non-urgent) ที่เข้า ER ในช่วงเวลานี้ — ทุกผู้ตรวจ">ระดับ 3-5</th>
           <th class="ex" title="ผู้ป่วยที่โรคหลักเป็นรหัส Z (เช่น ทำแผล ตัดไหม วัคซีน ติดตามอาการ) — ทุกผู้ตรวจ">ผู้รับบริการ<br>รหัสโรค Z</th></tr>
         {% for m in d.monthly %}
         <tr class="{{ '' if m.full else 'part' }}">
@@ -235,6 +236,7 @@
           <td>{{ m.pct }}%<span class="pct-bar"><i style="width:{{ m.pct }}%"></i></span></td>
           <td>{{ m.per_day }}</td><td>{{ '{:,}'.format(m.doctor) }}</td><td>{{ '{:,}'.format(m.svc) }}</td><td>{{ '{:,}'.format(m.other) }}</td>
           <td class="ex first">{{ '{:,}'.format(m.l12) }}<span class="sub">{{ (100 * m.l12 / m.total) | round(1) if m.total else 0 }}%</span></td>
+          <td class="ex">{{ '{:,}'.format(m.l35) }}<span class="sub">{{ (100 * m.l35 / m.total) | round(1) if m.total else 0 }}%</span></td>
           <td class="ex">{{ '{:,}'.format(m.z) }}<span class="sub">{{ (100 * m.z / m.total) | round(1) if m.total else 0 }}%</span></td>
         </tr>
         {% endfor %}
@@ -242,10 +244,10 @@
           <td class="l">รวม</td><td>–</td><td>{{ '{:,}'.format(k.days) }}</td><td>{{ '{:,}'.format(k.total) }}</td>
           <td>{{ '{:,}'.format(k.nurse) }}</td><td>{{ k.pct }}%</td><td>{{ k.per_day }}</td>
           <td>{{ '{:,}'.format(k.doctor) }}</td><td>{{ '{:,}'.format(k.svc) }}</td><td>{{ '{:,}'.format(k.other) }}</td>
-          <td class="ex first">{{ '{:,}'.format(k.l12) }}</td><td class="ex">{{ '{:,}'.format(k.z) }}</td>
+          <td class="ex first">{{ '{:,}'.format(k.l12) }}</td><td class="ex">{{ '{:,}'.format(k.l35) }}</td><td class="ex">{{ '{:,}'.format(k.z) }}</td>
         </tr>
       </table>
-      <div class="note">ระดับ 1-2 และรหัสโรค Z นับจากผู้ป่วยทุกรายที่เข้า ER ในช่วง {{ win }} (ไม่ว่าใครตรวจ) · % = สัดส่วนของ “ผู้ป่วยช่วง {{ win }}”
+      <div class="note">ระดับ 1-2 · ระดับ 3-5 (รวมกัน = ผู้ป่วยช่วง {{ win }}) และรหัสโรค Z นับจากผู้ป่วยทุกรายที่เข้า ER ในช่วง {{ win }} (ไม่ว่าใครตรวจ) · % = สัดส่วนของ “ผู้ป่วยช่วง {{ win }}”
         <span class="nt">รหัสโรค Z = โรคหลักขึ้นต้นด้วย Z ทุกรหัส (กว้างกว่า “พยาบาลให้บริการ” ที่นับเฉพาะ Z48 / Z23–Z27 กับผู้ป่วยรับบริการ)</span></div>
     </div>
   </section>
