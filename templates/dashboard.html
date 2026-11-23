@@ -238,7 +238,11 @@
         <span class="st">ระดับความเร่งด่วน · เวลารอพบแพทย์</span></span></header>
       <div class="body">
         <table class="t tri">
-          <tr><th>ระดับ</th><th>ราย</th><th>รอพบแพทย์</th><th>เป้าหมาย</th><th>Admit/Refer</th></tr>
+          <tr><th>ระดับ</th><th>ราย</th><th>รอพบแพทย์</th><th>เป้าหมาย</th><th>Admit/Refer</th>
+            <th class="ct first" title="ไม่มีรหัสบาดเจ็บ (ไม่ใช่รับบริการ)">Non-<br>trauma</th>
+            <th class="ct" title="Trauma ทั่วไป — มีรหัส ICD-10 S/T (ไม่ใช่จราจร)">Trauma</th>
+            <th class="ct" title="อุบัติเหตุจราจร — มีรหัส ICD-10 V">จราจร</th>
+            <th class="ct" title="รับบริการ (ทำแผล ฉีดยา ฯลฯ — er_pt_type รับบริการ)">รับ<br>บริการ</th></tr>
           {% for it in d.triage['items'] %}
           <tr>
             <td class="l"><span class="lvl" style="background:{{ it.color }}">{{ it.level }}</span>{{ it.name }}</td>
@@ -247,17 +251,20 @@
               <span class="sub">บันทึก {{ it.d2d_cover }}%</span></td>
             <td>{{ it.target }}</td>
             <td>{{ it.ar_pct }}%</td>
+            {% for key in ('non', 'tr', 'traf', 'svc') %}<td class="ct{{ ' first' if loop.first }}">{{ it.types[key] if it.types[key] else '–' }}</td>{% endfor %}
           </tr>
           {% endfor %}
           <tr class="tot">
             <td class="l">รวม</td><td>{{ '{:,}'.format(d.triage.total) }}</td>
             <td><span class="pp">{{ k.d2d }} นาที</span></td><td>–</td>
             <td>{{ (k.admit_pct + k.refer_pct) | round(1) }}%</td>
+            {% for key in ('non', 'tr', 'traf', 'svc') %}<td class="ct{{ ' first' if loop.first }}">{{ '{:,}'.format(d.triage.types[key]) }}</td>{% endfor %}
           </tr>
         </table>
         <div class="note">⏱ เวลาพบแพทย์ = เวลาที่<b>เร็วที่สุด</b>ของ กดเริ่มตรวจ / สั่ง Lab / X-ray / ยา /
           เวลาที่พยาบาลจด "รายงานแพทย์" ใน HPI ({{ '{:,}'.format(k.d2d_hpi) }} ราย)
           · ไม่นับ {{ d.triage.missing }} รายที่ไม่ได้คัดกรอง
+          · ประเภทเคสใช้เกณฑ์เดียวกับบล็อก 5 (Trauma = รหัส S/T · จราจร = รหัส V)
           <span class="nt">(เวลาจากการบันทึกในระบบ ไม่ใช่เวลาตรวจจริง · นับเฉพาะ 0–4 ชม. หลังเข้า ER)</span></div>
       </div>
     </section>

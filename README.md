@@ -1,6 +1,6 @@
 # ER Dashboard — แดชบอร์ดบริหารจัดการห้องฉุกเฉิน (HOSxP)
 
-> **เวอร์ชัน 1.4.2** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
+> **เวอร์ชัน 1.5.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
 > ดาวน์โหลดชุดติดตั้ง: [Releases](https://github.com/nopneo/er-dashboard-wnk/releases/latest) · สรุปขั้นตอน: [INSTALL.md](INSTALL.md) ·
 > ความปลอดภัย: [SECURITY.md](SECURITY.md) · การเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
 
@@ -34,7 +34,7 @@ python render.py --d1 2026-09-01 --d2 2026-09-30 --fmt jpg
 |---|-------|----------------|
 | 1 | ER KPI Summary | ผู้มา ER, เฉลี่ย/วัน, ระดับ 1-2, Admit, Refer, เวลาพบแพทย์, กลับมาซ้ำ ≤ 48 ชม. (เทียบช่วงก่อนหน้าที่ยาวเท่ากัน) |
 | 2 | ER Visit Trend | `er_regist` รายเดือน 9 เดือน แยก Trauma (ICD S/T/V) / Non-trauma + เส้น Admit |
-| 3 | Triage & Door-to-Doctor | ระดับ 1-5 × เวลาพบแพทย์เทียบเป้าหมาย × สัดส่วน Admit/Refer |
+| 3 | Triage & Door-to-Doctor | ระดับ 1-5 × เวลาพบแพทย์เทียบเป้าหมาย × สัดส่วน Admit/Refer × ประเภทเคส (Non-trauma / Trauma / จราจร / รับบริการ — เกณฑ์เดียวกับบล็อก 5) |
 | 4 | Disposition | `er_regist.er_dch_type` |
 | 5 | Case Type | Non-trauma / Trauma ทั่วไป / จราจร / รับบริการ |
 | 6 | Arrivals by Hour | `enter_er_time` รายชั่วโมง ระบายสีตามเวร |

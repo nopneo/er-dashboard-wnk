@@ -25,6 +25,7 @@ import re
 import statistics
 import threading
 import time as _time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
@@ -107,6 +108,12 @@ SHIFT_CASE = _shift_case("e.enter_er_time")
 LEVEL = "coalesce(e.er_emergency_level_id, least(et.export_code, 5), 5)"
 TRAUMA = "exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 regexp '^[STV]')"
 SVC = "ifnull(e.er_pt_type, 0) in %(svc)s"
+#: ประเภทเคสของ visit (บล็อก 3 และ 5 ใช้เกณฑ์เดียวกัน): รับบริการ / จราจร (ICD V) / Trauma ทั่วไป (S, T) / Non-trauma
+CASE_TYPE = (f"case when {SVC} then 'svc' "
+             "when exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 like 'V%%') then 'traf' "
+             "when exists(select 1 from ovstdiag x where x.vn = e.vn and x.icd10 regexp '^[ST]') then 'tr' "
+             "else 'non' end")
+CASE_KEYS = ("non", "tr", "traf", "svc")
 
 FROM = ("from er_regist e join ovst o on o.vn = e.vn "
         "left join er_emergency_type et on et.er_emergency_type = e.er_emergency_type ")
@@ -252,7 +259,7 @@ def _visits(d1, d2, shift):
         rows = []
         for r in fetch(f"""
             select {LEVEL} lvl, e.er_dch_type dch, {D2D} d2d, {ELIG} elig, ({ELIG} and {REVISIT}) rv,
-              e.enter_er_time t,
+              e.enter_er_time t, {CASE_TYPE} ct,
               case when {_HPI_LIKE} then replace(replace(replace(sc.hpi, char(13), ' '), char(10), ' '),
                                                  char(9), ' ') end hpi
             {FROM_ST} left join opdscreen sc on sc.vn = e.vn {_where(d1, d2, shift)}""", P):
@@ -261,7 +268,7 @@ def _visits(d1, d2, shift):
             h = hpi_minutes(_dt(r["t"]), r["hpi"]) if r.get("hpi") else None
             if h is not None and (d is None or h < d):
                 d = h
-            rows.append({"lvl": int(num(r["lvl"], 5)), "dch": int(num(r["dch"], 0)), "d2d": d,
+            rows.append({"lvl": int(num(r["lvl"], 5)), "dch": int(num(r["dch"], 0)), "d2d": d, "ct": r.get("ct") or "non",
                          "elig": bool(num(r["elig"])), "rv": bool(num(r["rv"])), "hpi": h is not None})
         ent.update(rows=rows, t=_time.time())
         return rows
@@ -338,17 +345,20 @@ def triage(d1, d2, shift):
         n, d2d_n = len(g), len(times)
         d2d = round(sum(times) / d2d_n, 1) if d2d_n else None
         r = {"ar": sum(x["dch"] in P["dch_ar"] for x in g)}
+        ct = Counter(x["ct"] for x in g)
         tgt = D2D_TARGET[lv]
         status = ("flat" if d2d is None else "good" if d2d <= tgt
                   else "watch" if d2d <= tgt * 1.5 else "bad")
         items.append({"level": lv, "name": LEVEL_NAME[lv], "color": LEVEL_COLOR[lv],
                       "value": n, "pct": _pct(n, total), "d2d": d2d, "d2d_cover": _pct(d2d_n, n),
                       "target": D2D_TARGET_LABEL[lv], "status": status,
-                      "ar_pct": _pct(num(r.get("ar")), n)})
+                      "ar_pct": _pct(num(r.get("ar")), n), "types": {k: ct.get(k, 0) for k in CASE_KEYS}})
     # ลงทะเบียน ER แต่ไม่ได้คัดกรอง — ไม่นับในทุกบล็อก แสดงจำนวนไว้ให้รู้ว่าตัดออกไปเท่าไร
     missing = num(fetch_one(f"select count(*) c from er_regist e {_where(d1, d2, shift, screened=False)} "
                             f"and not ({SCREENED})", P).get("c"))
-    return {"total": total, "items": items, "missing": missing, "missing_pct": _pct(missing, total + missing)}
+    ct = Counter(x["ct"] for x in v)
+    return {"total": total, "items": items, "missing": missing, "missing_pct": _pct(missing, total + missing),
+            "types": {k: ct.get(k, 0) for k in CASE_KEYS}}
 
 
 # ------------------------------------------------------ 4. Disposition
