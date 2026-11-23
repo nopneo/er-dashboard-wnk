@@ -222,6 +222,10 @@ table.t tr:last-child td:first-child { border-bottom-left-radius: 16px; }
 table.t tr:last-child td:last-child { border-bottom-right-radius: 16px; }
 table.t.tri td, table.t.tri th { white-space: nowrap; padding-left: 6px; padding-right: 6px; }
 table.t.tri td.l { font-size: 14px; }
+table.t.tri th.ct, table.t.tri td.ct { padding-left: 3px; padding-right: 3px; font-size: 13px; line-height: 1.2; }
+table.t.tri th.ct { font-size: 12px; }
+table.t.tri .ct.first { border-left: 1.5px solid var(--rose-b); }
+table.t.tri tr.tot .ct.first { border-left-color: rgba(255,255,255,.35); }
 table.t.tri .pp { min-width: 0; padding: 2px 9px; font-size: 13.5px; }
 table.t.mci td { height: auto; padding-top: 6px; padding-bottom: 6px; }
 table.t.mci td .sub { white-space: normal; font-size: 11.5px; line-height: 1.3; margin-top: 2px; }

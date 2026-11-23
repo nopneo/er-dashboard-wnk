@@ -29,6 +29,7 @@ from werkzeug.security import check_password_hash
 import check
 import db
 import nurse_report
+import privacy
 import queries
 import render
 from cache import TTLCache
@@ -60,7 +61,7 @@ class PrefixMiddleware:
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
 
-VERSION = "1.4.1"
+VERSION = "1.5.0"
 ICON_VERSION = "1"
 DEV_CONTACT = "นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว"
 
@@ -152,17 +153,39 @@ def _params():
     return d1, d2, shift
 
 
+def _public_view():
+    """คนนอก รพ. → ช่วงวันที่ปัดเป็นเดือนเต็ม และบล็อก CPR ช่องเล็กแสดง "<5" (privacy.py)
+    public=1 = บังคับโหมดสาธารณะ (ใช้ตอนส่งออกไฟล์ให้คนนอก เพราะ chromium เรียกหน้าเว็บจาก 127.0.0.1 ซึ่งนับเป็นคนใน)"""
+    if not privacy.enabled():
+        return False
+    return request.args.get("public") == "1" or not _from_lan()
+
+
+def _view_params():
+    """(d1, d2, shift, public) ของหน้าแดชบอร์ด"""
+    d1, d2, shift = _params()
+    public = _public_view()
+    if public:
+        d1, d2 = privacy.month_window(d1, d2)
+    return d1, d2, shift, public
+
+
+def _view_data(d1, d2, shift, public):
+    data = queries.build(d1, d2, shift)
+    return privacy.public_ctx(data) if public else data
+
+
 @app.route("/")
 def dashboard():
-    d1, d2, shift = _params()
-    return render_template("dashboard.html", d=queries.build(d1, d2, shift), presets=_fy_presets(),
-                           print_mode=request.args.get("print") == "1")
+    d1, d2, shift, public = _view_params()
+    return render_template("dashboard.html", d=_view_data(d1, d2, shift, public), presets=_fy_presets(),
+                           print_mode=request.args.get("print") == "1", public_view=public)
 
 
 @app.route("/api/data.json")
 def api_data():
-    d1, d2, shift = _params()
-    return jsonify(queries.build(d1, d2, shift))
+    d1, d2, shift, public = _view_params()
+    return jsonify(_view_data(d1, d2, shift, public))
 
 
 def _fy_start(today=None):
@@ -409,11 +432,14 @@ def export(fmt):
         url = f"http://127.0.0.1:{os.getenv('PORT', '6200')}/nurse?{qs}"
         name = f"er_nurse_{d1}_{d2}.{fmt}"
     else:
-        d1, d2, shift = _params()
-        qs = urllib.parse.urlencode({"d1": d1, "d2": d2, "shift": shift, "print": "1"})
+        d1, d2, shift, public = _view_params()
+        qs = urllib.parse.urlencode({"d1": d1, "d2": d2, "shift": shift, "print": "1",
+                                     **({"public": "1"} if public else {})})
         url = f"http://127.0.0.1:{os.getenv('PORT', '6200')}/?{qs}"
-        name = f"er_{d1}_{d2}{'' if shift == 'all' else '_' + shift}.{fmt}"
-    blob = _export_cache.get(name, EXPORT_CACHE_TTL)
+        name = f"er_{d1}_{d2}{'' if shift == 'all' else '_' + shift}.{fmt}" + ("|public" if public else "")
+    cache_key = name                                            # ไฟล์ของคนนอกต้องไม่ได้ฉบับเต็มจาก cache
+    name = name.split("|")[0]
+    blob = _export_cache.get(cache_key, EXPORT_CACHE_TTL)
     if blob is not None:
         return send_file(BytesIO(blob), mimetype=MIME[fmt], as_attachment=True, download_name=name)
     if not _render_lock.acquire(timeout=EXPORT_WAIT):
@@ -423,7 +449,7 @@ def export(fmt):
             out = os.path.join(tmp, name)
             render.render_to(fmt, url, out)
             blob = open(out, "rb").read()
-        _export_cache.set(name, blob)
+        _export_cache.set(cache_key, blob)
         return send_file(BytesIO(blob), mimetype=MIME[fmt], as_attachment=True, download_name=name)
     except Exception as e:
         app.logger.exception("export failed")

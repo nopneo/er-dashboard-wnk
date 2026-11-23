@@ -50,7 +50,7 @@ GRANT SELECT ON hos.* TO 'er_ro'@'%';      -- จำกัด host ให้แ�
 ## 2. ติดตั้งบน Linux
 
 ```bash
-unzip er_dashboard-1.4.1.zip -d /opt && cd /opt/er_dashboard
+unzip er_dashboard-1.5.0.zip -d /opt && cd /opt/er_dashboard
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env && nano .env                          # ใส่ DB_HOST / DB_USER / DB_PASS
 .venv/bin/python setup_check.py                            # ตรวจความพร้อม (ข้อ 0) — แก้ข้อ ✘ ก่อน
@@ -124,6 +124,8 @@ copy .env.example .env ; notepad .env
 | `ER_FT_STROKE_ICD` `ER_FT_STEMI_ICD` `ER_FT_HI_ICD` `ER_FT_TBI_ICD` | Fast track (บล็อก 19–22): ICD-10 ที่ขึ้นต้นด้วยรหัสเหล่านี้ ไม่มีจุด — Stroke (`I60,I61,I62,I63,I64`) · STEMI (`I210,I211,I212,I213,I219,I22`) · บาดเจ็บศีรษะ (`S00`…`S09`) · TBI (`S06`) |
 | `ER_FT_ECG_ICD9` `ER_FT_CPR_ICD9` `ER_FT_DEFIB_ICD9` | ICD-9-CM ของหัตถการ ER (`er_oper_code.icd9cm`) — ECG (`8952`) · CPR (`9960`) · Defibrillation (`9962`) · หัตถการที่ไม่ได้ใส่ ICD-9 ไม่ถูกนับ (หน้า `/check` บอกว่าตัวไหน) |
 | `ER_FT_ECG_MIN` `ER_FT_D2N_MIN` `ER_FT_STEMI_DIDO_MIN` `ER_FT_STROKE_DIDO_MIN` | เป้าหมาย (นาที) Door-to-ECG (10) · Door-to-needle (30) · STEMI Door-in-door-out (30) · Stroke Door-in-door-out (60) |
+| `ER_PUBLIC_MIN_CELL` | คนนอก รพ. (ไม่อยู่ใน LAN / `ER_LAN_NETS`) เห็นช่วงวันที่ปัดเป็นเดือนเต็ม และบล็อก CPR ที่มีน้อยกว่าค่านี้ (ค่าเริ่มต้น `5`) แสดงเป็น `<5` — กันย้อนหาตัวบุคคลจากตัวเลขรวม · `0` = ปิด (ไม่แนะนำ) |
+| `ER_LONG_RANGE_DAYS`, `ER_LONG_CACHE_TTL` | ช่วงที่ยาวเกินกี่วัน (31) เก็บแคชนานกว่า (1800 วินาที) |
 | `ER_MAX_DAYS` | ช่วงวันที่ยาวสุดที่ดึงได้ต่อครั้ง (ค่าเริ่มต้น 366) |
 | `ER_NP_START` / `ER_NP_END` | ช่วงเวลาของรายงานพยาบาลตรวจแทนแพทย์ (ค่าเริ่มต้น 16:00 / 20:00) |
 | `ER_NURSE_PROVIDER_TYPES` | `doctor.provider_type_code` ที่นับเป็นพยาบาล คั่นด้วยจุลภาค (ค่าเริ่มต้น 03) |
