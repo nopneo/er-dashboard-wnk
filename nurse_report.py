@@ -159,9 +159,12 @@ def _counts(rows):
     out = {k: c.get(k, 0) for k, _, _ in GROUPS}
     out["total"] = len(rows)
     out["pct"] = _pct(out["nurse"], out["total"])
-    out["l12"] = sum(r["lvl"] <= 2 for r in rows)
-    out["l35"] = sum(r["lvl"] >= 3 for r in rows)      # ไม่ใช้ชื่อ l345: kpi มี l345 ของเคสที่มีการตรวจ (ความหมายต่างกัน)
-    out["z"] = sum(r["pdx"].upper().startswith("Z") for r in rows)
+    # แบ่งผู้ป่วยทุกรายเป็น 3 กลุ่มไม่ซ้อนกัน (รวมกัน = total): รหัสโรค Z ทุกระดับ · ระดับ 1-2 และ 3-5 ที่ไม่ใช่รหัส Z
+    # (ไม่ใช้ชื่อ l345: kpi มี l345 ของเคสที่มีการตรวจ ความหมายต่างกัน)
+    isz = [r["pdx"].upper().startswith("Z") for r in rows]
+    out["z"] = sum(isz)
+    out["l12"] = sum(r["lvl"] <= 2 and not z for r, z in zip(rows, isz))
+    out["l35"] = sum(r["lvl"] >= 3 and not z for r, z in zip(rows, isz))
     return out
 
 
@@ -396,7 +399,7 @@ def to_xlsx(d, hospital=""):
     ws.column_dimensions["B"].width = 90
 
     grp_head = ["ผู้ป่วยในช่วงเวลา", "พยาบาลตรวจแทนแพทย์", "% พยาบาลตรวจ", "แพทย์ตรวจ",
-                "พยาบาลให้บริการ", "อื่น ๆ/ไม่ระบุ", "ระดับ 1-2 (ทุกผู้ตรวจ)", "ระดับ 3-5 (ทุกผู้ตรวจ)", "รหัสโรคหลัก Z (ทุกผู้ตรวจ)"]
+                "พยาบาลให้บริการ", "อื่น ๆ/ไม่ระบุ", "ระดับ 1-2 (ไม่รวมรหัส Z)", "ระดับ 3-5 (ไม่รวมรหัส Z)", "รหัสโรคหลัก Z (ทุกระดับ)"]
 
     def grp(x):
         return [x["total"], x["nurse"], x["pct"], x["doctor"], x["svc"], x["other"], x["l12"], x["l35"], x["z"]]

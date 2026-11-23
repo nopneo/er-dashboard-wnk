@@ -52,13 +52,14 @@ def nurse(monkeypatch):
 
 def test_nurse_monthly_counts_level_1_2_and_z_codes(nurse):
     oct_, nov = nurse["monthly"]
-    assert (oct_["total"], oct_["l12"], oct_["z"]) == (5, 2, 2)           # Z480 และ z230 (ตัวพิมพ์เล็กก็นับ)
-    assert (nov["total"], nov["l12"], nov["z"]) == (1, 1, 1)
-    assert (oct_["l35"], nov["l35"]) == (3, 0)
-    assert all(m["l12"] + m["l35"] == m["total"] for m in nurse["monthly"])        # 1-2 กับ 3-5 รวมกัน = ผู้ป่วยช่วงนั้น
-    assert nurse["kpi"]["l12"] == 3 and nurse["kpi"]["l35"] == 3 and nurse["kpi"]["z"] == 3
-    assert nurse["kpi"]["l345"] == 1                                       # l345 เดิมของ kpi = เคสที่มีการตรวจ (ไม่นับงานบริการ) ไม่ถูกทับด้วย l35 = 3
-    assert nurse["yearly"][0]["l12"] == 3 and nurse["yearly"][0]["l35"] == 3 and nurse["yearly"][0]["z"] == 3
+    assert (oct_["total"], oct_["l12"], oct_["z"]) == (5, 2, 2)           # Z480 และ z230 (ตัวพิมพ์เล็กก็นับ) ไม่นับซ้ำใน l12 / l35
+    assert (nov["total"], nov["l12"], nov["z"]) == (1, 0, 1)           # Z000 ระดับ 2 → อยู่ในคอลัมน์ Z ไม่ใช่ระดับ 1-2
+    assert (oct_["l35"], nov["l35"]) == (1, 0)
+    for grp in (*nurse["monthly"], *nurse["yearly"], *nurse["daily"], nurse["kpi"]):
+        assert grp["l12"] + grp["l35"] + grp["z"] == grp["total"], grp           # 3 กลุ่มไม่ซ้อนกัน รวมกัน = ผู้ป่วยช่วงนั้น
+    assert (nurse["kpi"]["l12"], nurse["kpi"]["l35"], nurse["kpi"]["z"]) == (2, 1, 3)
+    assert nurse["kpi"]["l345"] == 1                                       # l345 เดิมของ kpi = เคสที่มีการตรวจ (ไม่นับงานบริการ) ไม่ถูกทับด้วย l35
+    assert nurse["yearly"][0]["l12"] == 2 and nurse["yearly"][0]["z"] == 3
     assert nurse["daily"][4]["l12"] == 2 and nurse["daily"][4]["date"] == date(2026, 10, 5)
 
 
@@ -67,9 +68,9 @@ def test_nurse_excel_has_new_columns_without_moving_chart_columns(nurse):
     ws = wb["รายเดือน"]
     head = [c.value for c in ws[1]]
     assert head[5:11] == ["ผู้ป่วยในช่วงเวลา", "พยาบาลตรวจแทนแพทย์", "% พยาบาลตรวจ", "แพทย์ตรวจ", "พยาบาลให้บริการ", "อื่น ๆ/ไม่ระบุ"]
-    assert head[11:14] == ["ระดับ 1-2 (ทุกผู้ตรวจ)", "ระดับ 3-5 (ทุกผู้ตรวจ)", "รหัสโรคหลัก Z (ทุกผู้ตรวจ)"]   # ต่อท้ายกลุ่มเดิม กราฟอ้างคอลัมน์ 7, 9, 10
-    assert [c.value for c in ws[2]][11:14] == [2, 3, 2]
-    assert [c.value for c in ws[ws.max_row]][11:14] == [3, 3, 3]        # แถวรวม
+    assert head[11:14] == ["ระดับ 1-2 (ไม่รวมรหัส Z)", "ระดับ 3-5 (ไม่รวมรหัส Z)", "รหัสโรคหลัก Z (ทุกระดับ)"]   # ต่อท้ายกลุ่มเดิม กราฟอ้างคอลัมน์ 7, 9, 10
+    assert [c.value for c in ws[2]][11:14] == [2, 1, 2]
+    assert [c.value for c in ws[ws.max_row]][11:14] == [2, 1, 3]        # แถวรวม
     assert ws._charts and ws._charts[0].anchor._from.col == 16           # ไม่ทับคอลัมน์ข้อมูล (Q)
 
 
