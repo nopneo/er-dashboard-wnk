@@ -7,9 +7,11 @@ production:  gunicorn -b 127.0.0.1:6200 app:app หลัง Apache (sub-path �
 import functools
 import hashlib
 import ipaddress
+import logging
 import os
 import re
 import secrets
+import sys
 import tempfile
 import threading
 import time
@@ -22,11 +24,12 @@ try:
 except ImportError:                   # Windows
     fcntl = None
 
-from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask.sessions import SecureCookieSessionInterface
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash
 
+import cases
 import check
 import db
 import nurse_report
@@ -64,7 +67,7 @@ class PrefixMiddleware:
 app = Flask(__name__)
 app.wsgi_app = PrefixMiddleware(app.wsgi_app)
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 ICON_VERSION = "1"
 DEV_CONTACT = "นายเผด็จชัย สิงหล โรงพยาบาลวังน้ำเขียว"
 
@@ -340,6 +343,10 @@ def nurse_login():
         return render_template("nurse_login.html", error=None, back={}, closed=True), 403
     src = request.form if request.method == "POST" else request.args
     back = {k: v.isoformat() for k in ("d1", "d2") if (v := _parse_date(src.get(k)))}
+    if src.get("next") in cases.KINDS:          # มาจากหน้ารายชื่อเคส (/cases/<kind>) — ใส่รหัสแล้วกลับไปที่นั่น
+        back["next"] = src.get("next")
+        if src.get("shift") in queries.SHIFTS:
+            back["shift"] = src.get("shift")
     error = None
     if request.method == "POST":
         ip = _client_ip()
@@ -350,6 +357,8 @@ def nurse_login():
             session.clear()
             session.permanent = True
             session["np"] = _NP_TAG
+            if "next" in back:
+                return redirect(url_for("cases_page", kind=back["next"], **{k: v for k, v in back.items() if k != "next"}))
             return redirect(url_for("nurse", **back))
         else:
             _np_fail.set(ip, fails + 1)
@@ -357,7 +366,8 @@ def nurse_login():
             app.logger.warning("nurse login failed from %s", ip)
             time.sleep(1)                      # ชะลอการเดารหัส
             error = "รหัสไม่ถูกต้อง"
-    return render_template("nurse_login.html", error=error, back=back, closed=False), (401 if error else 200)
+    return render_template("nurse_login.html", error=error, back=back, closed=False,
+                           gate_title="รายชื่อเคสสำหรับทบทวน" if "next" in back else None), (401 if error else 200)
 
 
 @app.route("/nurse/logout")
@@ -523,7 +533,57 @@ def _check_allowed():
 @app.context_processor
 def _audit_flags():
     # ผู้ดูแลตรวจข้อมูลที่หน้า /check แล้ว → ไม่ต้องแสดงแถบเตือนบนแดชบอร์ด
-    return {"data_audited": os.getenv("ER_DATA_AUDITED", "0") == "1", "check_allowed": _check_allowed()}
+    return {"data_audited": os.getenv("ER_DATA_AUDITED", "0") == "1", "check_allowed": _check_allowed(),
+            "cases_allowed": _cases_available() and _from_lan()}
+
+
+# ---- รายชื่อเคสสำหรับทบทวน (/cases/<kind>) — มี HN และชื่อผู้ป่วย (นามสกุลตัดบางส่วน)
+# เปิดได้เฉพาะเครื่องใน LAN + ผ่านรหัสเดียวกับรายงานพยาบาล (ER_NP_PASS_HASH) + บันทึกการเปิดดูลง log (ไม่มี HN/ชื่อใน log)
+#: ใช้ stderr ตรง ๆ — gunicorn ส่งต่อให้ journald (journalctl -u <บริการ> | grep CASES) โดยไม่ต้องเขียนไฟล์ในโฟลเดอร์แอป
+audit_log = logging.getLogger("erdash.audit")
+if not audit_log.handlers:
+    _h = logging.StreamHandler(sys.stderr)
+    _h.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    audit_log.addHandler(_h)
+    audit_log.setLevel(logging.INFO)
+    audit_log.propagate = False
+
+
+def _cases_available():
+    """ตั้งรหัสรายงานพยาบาลแล้ว (หรือเปิดโดยไม่ใช้รหัสด้วย ER_NP_OPEN=1 เฉพาะ LAN) — ไม่ตั้ง = ปิดรายชื่อเคสไว้"""
+    return bool(NP_PASS_HASH) or NP_OPEN
+
+
+def _np_session_ok():
+    """ผ่านรหัสแล้วใน session นี้ — ไม่รับ token ส่งออกอายุสั้นของรายงานพยาบาล (รายชื่อเคสไม่มีการส่งออก)"""
+    return NP_OPEN or bool(NP_PASS_HASH and session.get("np") == _NP_TAG)
+
+
+@app.route("/cases/<kind>")
+def cases_page(kind):
+    if kind not in cases.KINDS:
+        abort(404)
+    block = ("lan" if not _from_lan() or request.args.get("public") == "1"
+             else None if _cases_available() else "closed")
+    if block:
+        audit_log.info("CASES denied kind=%s reason=%s ip=%s", kind, block, _client_ip())
+        resp = app.make_response((render_template("cases.html", kind=kind, kinds=cases.KINDS, block=block), 403))
+    elif not _np_session_ok():
+        return redirect(url_for("nurse_login", next=kind, d1=request.args.get("d1"), d2=request.args.get("d2"),
+                                shift=request.args.get("shift")))
+    else:
+        d1, d2 = _range(92, date.today().replace(day=1))
+        shift = request.args.get("shift") if request.args.get("shift") in queries.SHIFTS else "all"
+        with queries.build_slot():
+            data = cases.get(kind, d1, d2, shift)
+        audit_log.info("CASES view kind=%s range=%s..%s shift=%s rows=%d ip=%s", kind, d1, d2, shift,
+                       len(data["rows"]), _client_ip())
+        resp = app.make_response(render_template("cases.html", kind=kind, kinds=cases.KINDS, block=None, d=data,
+                                                 d1=d1, d2=d2, shift=shift, shifts=queries.SHIFTS,
+                                                 red_cutoff=queries.RED_MAX_MIN, level_color=queries.LEVEL_COLOR))
+    resp.headers["Cache-Control"] = "no-store"          # ข้อมูลส่วนบุคคล — ห้ามเก็บใน cache ของเบราว์เซอร์/proxy
+    resp.headers["X-Robots-Tag"] = "noindex"
+    return resp
 
 
 @app.route("/check")

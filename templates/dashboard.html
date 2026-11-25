@@ -17,6 +17,7 @@
 </head>
 
 {#- โดนัท SVG: items = [{label,value,pct,color}] -#}
+{% macro cases_link(kind, cls='cases-link') %}{% if cases_allowed and not print_mode and not public_view %}<a class="{{ cls }}" href="{{ url_for('cases_page', kind=kind, d1=d.d1, d2=d.d2, shift=d.shift) }}" title="มี HN และชื่อผู้ป่วย — เฉพาะเครื่องใน รพ. ต้องใส่รหัส และมีการบันทึกการเปิดดู">🔒 ดูรายชื่อเคส ›</a>{% endif %}{% endmacro %}
 {% macro donut(items, total, unit='ราย', size=104, vsize=9) %}
 {% set r = 15.915 %}
 <svg viewBox="0 0 42 42" width="{{ size }}" height="{{ size }}" style="flex:none">
@@ -180,6 +181,7 @@
           <div class="l">กลับมา ER ซ้ำ<small>Revisit ≤ 48 ชม.{{ ' · โรคเดิม' if k.revisit_match_len }} · ไม่นับ Z / นัด</small></div>
           <div class="v">{{ k.revisit_rate }}%</div><div class="u">{{ k.revisit }} ราย</div>
           {{ delta(k.revisit_delta) }}
+          {{ cases_link('revisit') }}
         </div>
       </div>
     </div>
@@ -567,6 +569,7 @@
         <span><span class="t">Red &gt; {{ rd.cutoff }} min</span> <span class="st">สีแดงอยู่ ER เกิน {{ rd.cutoff }} นาที</span></span></header>
       <div class="body">
         <div class="big red"><span class="v">{{ rd.over }}</span><span class="u">จาก {{ rd.n }} ราย · {{ rd.pct }}%</span></div>
+        {{ cases_link('red', 'cases-link dark') }}
         <div class="ttd" style="margin-top:10px;grid-template-columns:1fr 1fr">
           <div class="it"><div class="h">🛏 Admit</div><div class="v" style="font-size:32px">{{ rd.over_admit }}<span class="u">ราย</span></div></div>
           <div class="it ref"><div class="h">🚐 Refer</div><div class="v" style="font-size:32px">{{ rd.over_refer }}<span class="u">ราย</span></div></div>

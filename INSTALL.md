@@ -50,7 +50,7 @@ GRANT SELECT ON hos.* TO 'er_ro'@'%';      -- จำกัด host ให้แ�
 ## 2. ติดตั้งบน Linux
 
 ```bash
-unzip er_dashboard-1.6.0.zip -d /opt && cd /opt/er_dashboard
+unzip er_dashboard-1.7.0.zip -d /opt && cd /opt/er_dashboard
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env && nano .env                          # ใส่ DB_HOST / DB_USER / DB_PASS
 .venv/bin/python setup_check.py                            # ตรวจความพร้อม (ข้อ 0) — แก้ข้อ ✘ ก่อน
@@ -116,6 +116,7 @@ copy .env.example .env ; notepad .env
 | `ER_SVC_PT_TYPES` / `ER_AUTOPSY_PT_TYPES` | `er_regist.er_pt_type` ของ รับบริการ ทำแผล ฉีดยา (`4`) / ชันสูตรศพ (`6`) |
 | `ER_PDX_DIAGTYPE` | `ovstdiag.diagtype` ของวินิจฉัยหลัก (ค่าเริ่มต้น `1`) |
 | `ER_DOCTOR_PROVIDER_TYPES` / `ER_DOCTOR_POSITION_IDS` | `doctor.provider_type_code` (`01`) / `position_id` (`1`) ที่นับเป็นแพทย์ ในรายงานพยาบาลตรวจแทนแพทย์ |
+| *(รายชื่อเคส `/cases/*`)* | ไม่มีค่าใหม่ — ใช้ **`ER_NP_PASS_HASH`** เดียวกับรายงานพยาบาล (ไม่ตั้ง = ปิด) และเปิดได้เฉพาะเครื่องใน LAN: เครื่องที่ออกอินเทอร์เน็ตผ่าน IP สาธารณะของ รพ. ต้องใส่ IP นั้นใน `ER_LAN_NETS` (ดูบันทึกการเปิดดูด้วย `journalctl -u <บริการ> \| grep CASES`) |
 | `ER_DATA_AUDITED` | `1` = ตรวจกับข้อมูลของ รพ. แล้ว (ข้อ 0) — ซ่อนแถบเตือนบนแดชบอร์ด |
 | `ER_LAN_NETS` | เครือข่ายเพิ่มเติมที่เปิดหน้า `/check` ได้ คั่นด้วย `,` (ค่าเริ่มต้นเปิดเฉพาะ IP ภายใน) — คำขอที่ผ่าน Cloudflare / cloudflared (มี `CF-Connecting-IP`) เปิดได้**เฉพาะ** IP ในค่านี้ เช่น IP สาธารณะของ รพ. |
 | `ER_CHECK_OPEN` | `1` = เปิดหน้า `/check` ได้ทุกที่ (ไม่แนะนำ — หน้านั้นบอกโครงสร้างรหัสของ HOSxP) |

@@ -29,7 +29,7 @@
 <div class="sheet gate">
   <div class="card">
     <img src="{{ logo_url }}" alt="ตรา{{ hospital }}">
-    <h1>🔒 รายงานพยาบาลตรวจแทนแพทย์</h1>
+    <h1>🔒 {{ gate_title or 'รายงานพยาบาลตรวจแทนแพทย์' }}</h1>
     {% if closed %}
     <p>{{ hospital }} · ยังไม่ได้ตั้งรหัสเข้าดู จึงปิดรายงานไว้</p>
     <div class="err">ผู้ดูแลระบบ: ตั้ง <code>ER_NP_PASS_HASH</code> ใน .env (ดู INSTALL.md) แล้วรีสตาร์ตบริการ</div>
@@ -40,7 +40,7 @@
       <input type="password" name="passcode" inputmode="numeric" placeholder="รหัสเข้าดู" required autofocus
              aria-label="รหัสเข้าดู">
       {% if error %}<div class="err">{{ error }}</div>{% endif %}
-      <button type="submit">เข้าดูรายงาน</button>
+      <button type="submit">{{ 'เข้าดูรายชื่อเคส' if gate_title else 'เข้าดูรายงาน' }}</button>
     </form>
     {% endif %}
     <a class="back" href="{{ url_for('dashboard') }}">← กลับ ER Dashboard</a>

@@ -181,15 +181,19 @@ _SAME_DX = ("and exists(select 1 from ovstdiag a join ovstdiag b on left(b.icd10
             "where a.vn = e.vn and a.diagtype = %(pdx)s and b.vn = p.vn and b.diagtype = %(pdx)s "
             "and ifnull(a.icd10, '') <> '') ")
 #: กลับมา ER ซ้ำภายใน 48 ชม. หลัง ER visit ก่อนหน้าที่เข้าเกณฑ์เดียวกัน และเป็นโรคหรืออาการเดิม (ER_REVISIT_MATCH_LEN)
-def _revisit_sql(match_len):
-    return ("exists(select 1 from ovst po join er_regist p on p.vn = po.vn "
-            "where po.hn = o.hn and p.vn <> e.vn and ifnull(p.er_pt_type, 0) not in %(svc)s "
+def _revisit_where(match_len):
+    """เงื่อนไขของ ER visit ก่อนหน้า (po / p) ที่ทำให้ visit ปัจจุบัน (e / o) เป็นการกลับมาซ้ำ — ใช้ร่วมกับรายชื่อเคส (cases.py)"""
+    return ("po.hn = o.hn and p.vn <> e.vn and ifnull(p.er_pt_type, 0) not in %(svc)s "
             "and p.er_emergency_level_id is not null and ifnull(po.ovstist, '') not in %(appt)s "
             f"and {_no_z('p')} "
             "and po.vstdate between e.vstdate - interval 2 day and e.vstdate "
             "and p.enter_er_time < e.enter_er_time "
             "and p.enter_er_time >= e.enter_er_time - interval 48 hour "
-            + (_SAME_DX if match_len else "") + ")")
+            + (_SAME_DX if match_len else ""))
+
+
+def _revisit_sql(match_len):
+    return "exists(select 1 from ovst po join er_regist p on p.vn = po.vn where " + _revisit_where(match_len) + ")"
 
 
 REVISIT = _revisit_sql(REVISIT_MATCH_LEN)
