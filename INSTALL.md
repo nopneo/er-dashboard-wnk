@@ -50,7 +50,7 @@ GRANT SELECT ON hos.* TO 'er_ro'@'%';      -- จำกัด host ให้แ�
 ## 2. ติดตั้งบน Linux
 
 ```bash
-unzip er_dashboard-1.5.2.zip -d /opt && cd /opt/er_dashboard
+unzip er_dashboard-1.6.0.zip -d /opt && cd /opt/er_dashboard
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env && nano .env                          # ใส่ DB_HOST / DB_USER / DB_PASS
 .venv/bin/python setup_check.py                            # ตรวจความพร้อม (ข้อ 0) — แก้ข้อ ✘ ก่อน
@@ -127,6 +127,7 @@ copy .env.example .env ; notepad .env
 | `ER_FT_ECG_MIN` `ER_FT_D2N_MIN` `ER_FT_STEMI_DIDO_MIN` `ER_FT_STROKE_DIDO_MIN` | เป้าหมาย (นาที) Door-to-ECG (10) · Door-to-needle (30) · STEMI Door-in-door-out (30) · Stroke Door-in-door-out (60) |
 | `ER_PUBLIC_MIN_CELL` | คนนอก รพ. (ไม่อยู่ใน LAN / `ER_LAN_NETS`) เห็นช่วงวันที่ปัดเป็นเดือนเต็ม และบล็อก CPR ที่มีน้อยกว่าค่านี้ (ค่าเริ่มต้น `5`) แสดงเป็น `<5` — กันย้อนหาตัวบุคคลจากตัวเลขรวม · `0` = ปิด (ไม่แนะนำ) |
 | `ER_LONG_RANGE_DAYS`, `ER_LONG_CACHE_TTL` | ช่วงที่ยาวเกินกี่วัน (31) เก็บแคชนานกว่า (1800 วินาที) |
+| `ER_REVISIT_MATCH_LEN` | กลับมา ER ซ้ำ ≤ 48 ชม. ต้องเป็นโรคเดิม: โรคหลักครั้งนี้กับครั้งก่อนมี ICD-10 ตรงกันกี่ตัวแรก (ค่าเริ่มต้น `3` = กลุ่มรหัสเดียวกัน · `4`–`6` เข้มขึ้น · `0` = ไม่ดูโรค) |
 | `ER_MAX_DAYS` | ช่วงวันที่ยาวสุดที่ดึงได้ต่อครั้ง (ค่าเริ่มต้น 366) |
 | `ER_NP_START` / `ER_NP_END` | ช่วงเวลาของรายงานพยาบาลตรวจแทนแพทย์ (ค่าเริ่มต้น 16:00 / 20:00) |
 | `ER_NURSE_PROVIDER_TYPES` | `doctor.provider_type_code` ที่นับเป็นพยาบาล คั่นด้วยจุลภาค (ค่าเริ่มต้น 03) |

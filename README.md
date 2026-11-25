@@ -1,6 +1,6 @@
 # ER Dashboard — แดชบอร์ดบริหารจัดการห้องฉุกเฉิน (HOSxP)
 
-> **เวอร์ชัน 1.5.2** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
+> **เวอร์ชัน 1.6.0** — ใช้ได้กับโรงพยาบาลที่ใช้ HOSxP · **คู่มือติดตั้ง (PDF): [docs/ER_Dashboard_install_manual.pdf](docs/ER_Dashboard_install_manual.pdf)** ·
 > ดาวน์โหลดชุดติดตั้ง: [Releases](https://github.com/nopneo/er-dashboard-wnk/releases/latest) · สรุปขั้นตอน: [INSTALL.md](INSTALL.md) ·
 > ความปลอดภัย: [SECURITY.md](SECURITY.md) · การเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
 
@@ -80,7 +80,7 @@ HOSxP ของหลายโรงพยาบาลไม่ได้ลง�
 
 - **ไม่นับเคสที่ลงทะเบียน ER แต่ไม่ได้คัดกรอง** (ไม่มี `er_emergency_level_id` หรือ `er_pt_type` = ส่งมาผิด) ในทุกบล็อกและรายงานพยาบาล
   — แสดงจำนวนที่ไม่นับในบล็อก 3 และ 11
-- **กลับมา ER ซ้ำ ≤ 48 ชม.** ไม่นับรับบริการ (`er_pt_type` 4), มาตามนัด (`ovstist` 02) และโรคหลักรหัส Z ทั้งครั้งนี้และครั้งก่อน
+- **กลับมา ER ซ้ำ ≤ 48 ชม.** ต้องเป็น **โรคหรืออาการเดิม** (โรคหลักครั้งนี้กับครั้งก่อนมี ICD-10 ตรงกัน 3 ตัวแรก — `ER_REVISIT_MATCH_LEN`) · ไม่นับรับบริการ (`er_pt_type` 4), มาตามนัด (`ovstist` 02) และโรคหลักรหัส Z ทั้งครั้งนี้และครั้งก่อน · ไม่มีโรคหลักที่ครั้งใดครั้งหนึ่ง = ไม่นับ
 
 ## การเชื่อมต่อฐานข้อมูล
 

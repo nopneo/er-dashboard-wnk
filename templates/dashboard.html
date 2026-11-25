@@ -177,7 +177,7 @@
           {{ delta(k.d2d_delta) }}
         </div>
         <div class="kpi g-purple"><span class="e">🔁</span>
-          <div class="l">กลับมา ER ซ้ำ<small>Revisit ≤ 48 ชม. · ไม่นับ Z / นัด</small></div>
+          <div class="l">กลับมา ER ซ้ำ<small>Revisit ≤ 48 ชม.{{ ' · โรคเดิม' if k.revisit_match_len }} · ไม่นับ Z / นัด</small></div>
           <div class="v">{{ k.revisit_rate }}%</div><div class="u">{{ k.revisit }} ราย</div>
           {{ delta(k.revisit_delta) }}
         </div>
@@ -453,7 +453,7 @@
             <div class="p">{{ qq.refer_in_pct }}% ของผู้มา ER</div></div>
           <div class="qt {{ 'warn' if k.revisit_rate > 5 else 'ok' }}"><div class="l">กลับมา ER ซ้ำ ≤ 48 ชม.</div>
             <div class="v">{{ k.revisit }}<span class="u">ราย</span></div>
-            <div class="p">{{ k.revisit_rate }}% · เกณฑ์ ≤ 5% · ไม่นับรหัส Z / นัด / รับบริการ</div></div>
+            <div class="p">{{ k.revisit_rate }}% · เกณฑ์ ≤ 5% · {% if k.revisit_match_len %}โรคหลักเดิม (ICD-10 {{ k.revisit_match_len }} ตัวแรก) · {% endif %}ไม่นับรหัส Z / นัด / รับบริการ</div></div>
           <div class="qt {{ 'warn' if qq.ama > 0 }}"><div class="l">ปฏิเสธการรักษา / หนีกลับ</div>
             <div class="v">{{ qq.ama }}<span class="u">ราย</span></div>
             <div class="p">ปฏิเสธ {{ qq.refuse }} · หนีกลับ {{ qq.escape }} · {{ qq.ama_pct }}%</div></div>
