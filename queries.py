@@ -74,6 +74,19 @@ DCH = {k: _codes(f"ER_DCH_{k.upper()}", d, ints=True) for k, d in (
 ER_DEPCODE = _codes("ER_DEPCODE", "011")[0]
 NOT_DEPT = _codes("ER_NOT_DEPCODES", "999")
 
+#: กลับมาซ้ำต้องเป็น "โรคหรืออาการเดิม" = โรคหลักครั้งนี้กับครั้งก่อนมี ICD-10 ตรงกัน N ตัวแรก
+#: (3 = กลุ่มรหัสเดียวกัน เช่น J06.0 กับ J06.9 · 4-6 เข้มขึ้น · 0 = ไม่ดูโรค นับทุกครั้งที่กลับมาภายใน 48 ชม. แบบ 1.5.x)
+def _match_len(raw):
+    """(จำนวนตัวแรกของ ICD-10 ที่ต้องตรงกัน, ค่า env รูปแบบผิดหรือไม่) — ผิด = ใช้ 3"""
+    raw = raw.strip()
+    ok = raw.isdigit() and int(raw) <= 6
+    return (int(raw) if ok else 3), bool(raw) and not ok
+
+
+REVISIT_MATCH_LEN, _bad = _match_len(os.getenv("ER_REVISIT_MATCH_LEN", ""))
+if _bad:
+    CODE_ERRORS.append(f"ER_REVISIT_MATCH_LEN={os.getenv('ER_REVISIT_MATCH_LEN')}")
+
 #: Fast track (บล็อก 19-22) — ICD-10 ขึ้นต้นด้วยรหัสเหล่านี้ (ไม่มีจุด เช่น I210)
 #: STEMI รวม I21.9 / I22 เพราะ ER มักลงรหัส MI ไม่ระบุชนิด · ไม่รวม NSTEMI (I21.4)
 FT_ICD = {k: _codes(f"ER_FT_{k.upper()}_ICD", d) for k, d in (
@@ -92,7 +105,7 @@ P = {
     "pdx": PDX_DIAGTYPE, "svc": SVC_PT_TYPES,
     **{f"dch_{k}": v for k, v in DCH.items()},
     "dch_ar": DCH["refer"] + DCH["admit"], "dch_ama": DCH["refuse"] + DCH["escape"],
-    "er_dep": ER_DEPCODE, "not_dep": (ER_DEPCODE,) + NOT_DEPT,
+    "er_dep": ER_DEPCODE, "not_dep": (ER_DEPCODE,) + NOT_DEPT, "rv_len": REVISIT_MATCH_LEN,
     **{f"ft_{k}": "^(" + "|".join(v) + ")" for k, v in FT_ICD.items()},
     **{f"ft_{k}": v for k, v in FT_ICD9.items()},
     "ft_lytic": FT_LYTIC_RE,
@@ -163,14 +176,23 @@ def _no_z(alias):
 #: visit ที่นับในอัตรากลับมาซ้ำ — ไม่นับรับบริการ (er_pt_type 4), มาตามนัด (ovstist 02) และโรคหลักรหัส Z
 #: (ทำแผล ตัดไหม ฉีดยา วัคซีน ติดตามอาการ) ทั้งครั้งนี้และครั้งก่อน
 ELIG = f"(not {SVC} and ifnull(o.ovstist, '') not in %(appt)s and {_no_z('e')})"
-#: กลับมา ER ซ้ำภายใน 48 ชม. หลัง ER visit ก่อนหน้าที่เข้าเกณฑ์เดียวกัน
-REVISIT = ("exists(select 1 from ovst po join er_regist p on p.vn = po.vn "
-           "where po.hn = o.hn and p.vn <> e.vn and ifnull(p.er_pt_type, 0) not in %(svc)s "
-           "and p.er_emergency_level_id is not null and ifnull(po.ovstist, '') not in %(appt)s "
-           f"and {_no_z('p')} "
-           "and po.vstdate between e.vstdate - interval 2 day and e.vstdate "
-           "and p.enter_er_time < e.enter_er_time "
-           "and p.enter_er_time >= e.enter_er_time - interval 48 hour)")
+#: โรคหลักของ visit ครั้งนี้ (a) กับครั้งก่อน (b) ตรงกัน %(rv_len)s ตัวแรก — ไม่มีโรคหลักที่ครั้งใดครั้งหนึ่ง = ไม่นับเป็นกลับมาซ้ำ
+_SAME_DX = ("and exists(select 1 from ovstdiag a join ovstdiag b on left(b.icd10, %(rv_len)s) = left(a.icd10, %(rv_len)s) "
+            "where a.vn = e.vn and a.diagtype = %(pdx)s and b.vn = p.vn and b.diagtype = %(pdx)s "
+            "and ifnull(a.icd10, '') <> '') ")
+#: กลับมา ER ซ้ำภายใน 48 ชม. หลัง ER visit ก่อนหน้าที่เข้าเกณฑ์เดียวกัน และเป็นโรคหรืออาการเดิม (ER_REVISIT_MATCH_LEN)
+def _revisit_sql(match_len):
+    return ("exists(select 1 from ovst po join er_regist p on p.vn = po.vn "
+            "where po.hn = o.hn and p.vn <> e.vn and ifnull(p.er_pt_type, 0) not in %(svc)s "
+            "and p.er_emergency_level_id is not null and ifnull(po.ovstist, '') not in %(appt)s "
+            f"and {_no_z('p')} "
+            "and po.vstdate between e.vstdate - interval 2 day and e.vstdate "
+            "and p.enter_er_time < e.enter_er_time "
+            "and p.enter_er_time >= e.enter_er_time - interval 48 hour "
+            + (_SAME_DX if match_len else "") + ")")
+
+
+REVISIT = _revisit_sql(REVISIT_MATCH_LEN)
 
 
 def _th(text):
@@ -306,7 +328,7 @@ def kpi_summary(d1, d2, shift):
         "d2d": d2d, "d2d_delta": _delta(d2d, d2d_prev),
         "d2d_n": cur["d2d_n"], "d2d_cover": _pct(cur["d2d_n"], n), "d2d_hpi": cur["d2d_hpi"],
         "revisit": cur["rv"], "revisit_rate": rv_rate, "revisit_delta": _delta(rv_rate, rv_prev),
-        "revisit_base": cur["nelig"],
+        "revisit_base": cur["nelig"], "revisit_match_len": REVISIT_MATCH_LEN,
     }
 
 
@@ -857,7 +879,7 @@ def alerts(kpi, tri, ttd, q, load, red=None, mci=None, ft=None):
                     "action": "กดเริ่มตรวจใน HOSxP ทันทีที่แพทย์พบผู้ป่วย ให้เวลาตรงกับจริง"})
     if kpi["revisit_rate"] > 5:
         out.append({"level": "high" if kpi["revisit_rate"] > 10 else "mid",
-                    "issue": f"กลับมา ER ซ้ำใน 48 ชม. {kpi['revisit']} ราย ({kpi['revisit_rate']}%)",
+                    "issue": f"กลับมา ER ซ้ำใน 48 ชม. {'ด้วยโรคเดิม ' if REVISIT_MATCH_LEN else ''}{kpi['revisit']} ราย ({kpi['revisit_rate']}%)",
                     "where": "ER", "status": "ติดตาม", "action": "ทบทวนเคสกลับมาซ้ำ (Unplanned return)"})
     if ttd["admit"]["over"] > 0:
         out.append({"level": "mid", "issue": f"รอ Admit เกิน {ttd['cutoff']} นาที {ttd['admit']['over']} ราย",
