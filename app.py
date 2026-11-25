@@ -1,7 +1,7 @@
 """ER Dashboard — แดชบอร์ดบริหารจัดการห้องฉุกเฉิน (HOSxP)
 
 รันเอง:      python app.py            → http://127.0.0.1:6200/
-production:  gunicorn -b 0.0.0.0:6200 app:app   (ออกผ่าน sub-path เช่น /erdash/)
+production:  gunicorn -b 127.0.0.1:6200 app:app หลัง Apache (sub-path เช่น /erdash/) — ห้ามเปิด 0.0.0.0
 """
 
 import functools
@@ -23,6 +23,7 @@ except ImportError:                   # Windows
     fcntl = None
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask.sessions import SecureCookieSessionInterface
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash
 
@@ -45,14 +46,16 @@ class PrefixMiddleware:
         self.wsgi_app = wsgi_app
 
     def __call__(self, environ, start_response):
-        prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "")
+        # เชื่อ header เฉพาะจาก reverse proxy บนเครื่องเดียวกัน (TRUSTED_PROXIES) — เครื่องที่ต่อพอร์ตแอปตรงแก้ลิงก์ไม่ได้
+        trusted = environ.get("REMOTE_ADDR", "") in TRUSTED_PROXIES
+        prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "") if trusted else ""
         # รับเฉพาะ path ภายใน เช่น /erdash — กันคนส่ง header ปลอม (//evil.example) ให้ลิงก์ชี้ออกนอกเว็บ
         if prefix and _PREFIX_RE.fullmatch(prefix):
             environ["SCRIPT_NAME"] = prefix.rstrip("/")
             path = environ.get("PATH_INFO", "")
             if path.startswith(prefix):
                 environ["PATH_INFO"] = path[len(prefix):] or "/"
-        proto = environ.get("HTTP_X_FORWARDED_PROTO")
+        proto = environ.get("HTTP_X_FORWARDED_PROTO") if trusted else None
         if proto in ("http", "https"):
             environ["wsgi.url_scheme"] = proto
         return self.wsgi_app(environ, start_response)
@@ -226,11 +229,35 @@ NP_LOGIN_HOURS = int(os.getenv("ER_NP_LOGIN_HOURS", "12"))
 NP_MAX_FAIL = 10
 NP_FAIL_WINDOW = 900
 _np_fail = TTLCache(maxsize=512)
+#: เพดานรวมทุก IP — รหัสกลางตัวเดียวเปิดจากอินเทอร์เน็ตได้ ผู้โจมตีที่มีหลาย IP เลี่ยงเพดานต่อ IP ได้
+#: ผิดรวมครบเท่านี้ใน NP_FAIL_WINDOW → พักการ login ทุกคน (นับแยกต่อ worker ของ gunicorn)
+NP_MAX_FAIL_ALL = int(os.getenv("ER_NP_MAX_FAIL_ALL", "30"))
+_np_fail_all = []
+_np_fail_lock = threading.Lock()
+
+
+def _np_global_fails(add=False):
+    """จำนวนครั้งที่ใส่รหัสผิดรวมทุก IP ใน NP_FAIL_WINDOW วินาทีล่าสุด (add=True = นับเพิ่มหนึ่งครั้งก่อน)"""
+    now = time.time()
+    with _np_fail_lock:
+        _np_fail_all[:] = [t for t in _np_fail_all if now - t < NP_FAIL_WINDOW]
+        if add:
+            _np_fail_all.append(now)
+        return len(_np_fail_all)
 
 # gunicorn หลาย worker ต้องใช้ key เดียวกัน — ไม่ตั้ง ER_SECRET_KEY ก็ derive จาก hash ของรหัส
 app.secret_key = (os.getenv("ER_SECRET_KEY")
                   or (hashlib.sha256(("erdash-session:" + NP_PASS_HASH).encode()).hexdigest() if NP_PASS_HASH
                       else secrets.token_hex(32)))
+class _SessionInterface(SecureCookieSessionInterface):
+    """cookie ติด Secure เมื่อคำขอเข้ามาทาง https (หลัง Apache = X-Forwarded-Proto จาก proxy ที่ไว้ใจ)
+    เข้าตรงแบบ http บนเครื่องตัวเอง (ทดสอบ) ยังใช้ได้"""
+
+    def get_cookie_secure(self, app):
+        return request.is_secure or super().get_cookie_secure(app)
+
+
+app.session_interface = _SessionInterface()
 app.config.update(SESSION_COOKIE_NAME="erdash_session",   # ไม่ชนกับ cookie "session" ของแอปอื่นในโดเมนเดียวกัน
                   SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
                   PERMANENT_SESSION_LIFETIME=timedelta(hours=NP_LOGIN_HOURS))
@@ -317,7 +344,7 @@ def nurse_login():
     if request.method == "POST":
         ip = _client_ip()
         fails = _np_fail.get(ip, NP_FAIL_WINDOW) or 0
-        if fails >= NP_MAX_FAIL:
+        if fails >= NP_MAX_FAIL or (NP_MAX_FAIL_ALL and _np_global_fails() >= NP_MAX_FAIL_ALL):
             error = "ใส่รหัสผิดหลายครั้ง กรุณารอ 15 นาทีแล้วลองใหม่"
         elif check_password_hash(NP_PASS_HASH, request.form.get("passcode", "").strip()):
             session.clear()
@@ -326,6 +353,8 @@ def nurse_login():
             return redirect(url_for("nurse", **back))
         else:
             _np_fail.set(ip, fails + 1)
+            _np_global_fails(add=True)
+            app.logger.warning("nurse login failed from %s", ip)
             time.sleep(1)                      # ชะลอการเดารหัส
             error = "รหัสไม่ถูกต้อง"
     return render_template("nurse_login.html", error=error, back=back, closed=False), (401 if error else 200)
@@ -460,6 +489,9 @@ def export(fmt):
 
 #: เครือข่ายเพิ่มเติมที่นับเป็น "ใน รพ." นอกจาก IP ภายใน (เช่น IP สาธารณะของ รพ. เมื่อเข้าผ่าน Cloudflare)
 LAN_NETS = _nets(os.getenv("ER_LAN_NETS", ""))
+#: IP ภายในมาตรฐาน — ระบุเอง ไม่ใช้ ip.is_private ที่นับช่วงสาธารณะบางช่วงเป็น private ด้วย
+#: (เช่น 198.18.0.0/15, 203.0.113.0/24)
+PRIVATE_NETS = _nets("10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7")
 
 
 def _from_lan():
@@ -474,11 +506,13 @@ def _from_lan():
         ip = ipaddress.ip_address((_client_ip() or "").strip())
     except ValueError:
         return False
+    if getattr(ip, "ipv4_mapped", None):
+        ip = ip.ipv4_mapped
     if any(ip in n for n in LAN_NETS):
         return True
     if request.headers.get("CF-Connecting-IP", "").strip():
         return False
-    return ip.is_private or ip.is_loopback
+    return any(ip in n for n in PRIVATE_NETS)
 
 
 def _check_allowed():

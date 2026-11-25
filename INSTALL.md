@@ -68,7 +68,8 @@ After=network.target
 User=erdash
 Group=erdash
 WorkingDirectory=/opt/er_dashboard
-ExecStart=/opt/er_dashboard/.venv/bin/gunicorn --bind 0.0.0.0:6200 --workers 3 --timeout 120 \
+# ฟังเฉพาะ 127.0.0.1 หลัง Apache — ห้าม 0.0.0.0 (เครื่องใน LAN จะต่อพอร์ตตรงโดยไม่ผ่าน Apache) · เครื่องใน รพ. ใช้โดเมนภายใน
+ExecStart=/opt/er_dashboard/.venv/bin/gunicorn --bind 127.0.0.1:6200 --workers 3 --timeout 120 \
   --access-logfile - --access-logformat '%(t)s %(m)s %(U)s %(s)s %(L)ss' app:app
 Restart=always
 # chromium (ปุ่มส่งออก) ต้องมี HOME ที่เขียนได้
