@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>รายชื่อเคสสำหรับทบทวน — {{ hospital }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_v }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icon/favicon-32.png') }}">
+<meta name="theme-color" content="#b91c1c">
+<style>
+  .cs-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .cs-tabs a { font-family: 'Kanit'; font-size: 15px; color: var(--maroon); background: #fff; border: 1.5px solid var(--rose-b);
+               border-radius: 999px; padding: 5px 16px; text-decoration: none; }
+  .cs-tabs a.on { background: var(--red); border-color: var(--red); color: #fff; }
+  .cs-warn { background: #fff4e5; border: 1.5px solid #f5c27a; color: #5c3200; border-radius: 14px; padding: 9px 14px;
+             font-size: 14px; line-height: 1.55; margin: 10px 0; }
+  .cs-count { font-family: 'Kanit'; font-weight: 600; font-size: 18px; color: var(--maroon); margin: 12px 0 6px; }
+  table.t.cs td { white-space: nowrap; padding: 7px 10px; text-align: left; vertical-align: top; height: auto; }
+  table.t.cs th { text-align: left; padding: 8px 10px; }
+  table.t.cs td .sub { display: block; font-size: 12px; color: var(--muted); white-space: normal; }
+  table.t.cs .lvl { margin-right: 6px; }
+  table.t.cs td.w { white-space: normal; min-width: 150px; }
+</style>
+</head>
+<body class="ck-page">
+<div class="sheet">
+
+  <div class="ck-head">
+    <a class="ck-back" href="{{ url_for('dashboard') }}">‹ กลับแดชบอร์ด</a>
+    <div>
+      <div class="ck-ttl">🔒 รายชื่อเคสสำหรับทบทวน</div>
+      <div class="ck-sub">{{ hospital }}{% if not block %} · {{ kinds[kind] }}{% endif %}</div>
+    </div>
+  </div>
+
+  {% if block == 'lan' %}
+  <div class="block"><p>🔒 หน้านี้มี HN และชื่อผู้ป่วย จึงเปิดได้เฉพาะเครื่องในเครือข่ายของโรงพยาบาลเท่านั้น
+    (ไม่เปิดผ่านอินเทอร์เน็ตภายนอก และไม่เปิดในมุมมองสาธารณะ)</p></div>
+  {% elif block == 'closed' %}
+  <div class="block"><p>🔒 ยังไม่ได้ตั้งรหัสเข้าดู จึงปิดรายชื่อเคสไว้ — ผู้ดูแลระบบ: ตั้ง <code>ER_NP_PASS_HASH</code> ใน .env
+    (รหัสเดียวกับรายงานพยาบาลตรวจแทนแพทย์ ดู INSTALL.md) แล้วรีสตาร์ตบริการ</p></div>
+  {% else %}
+
+  <div class="cs-tabs">
+    {% for k, name in kinds.items() %}
+    <a class="{{ 'on' if k == kind }}" href="{{ url_for('cases_page', kind=k, d1=d1, d2=d2, shift=shift) }}">{{ name }}</a>
+    {% endfor %}
+  </div>
+
+  <form class="toolbar ck-form" method="get" action="{{ url_for('cases_page', kind=kind) }}">
+    <label>ตั้งแต่ <input type="date" name="d1" value="{{ d1 }}" required></label>
+    <label>ถึง <input type="date" name="d2" value="{{ d2 }}" required></label>
+    <select name="shift">
+      {% for k, v in shifts.items() %}<option value="{{ k }}" {{ 'selected' if shift == k }}>{{ v }}</option>{% endfor %}
+    </select>
+    <button type="submit">ดูรายชื่อ</button>
+    <span class="asof">ช่วงยาวสุด 92 วัน</span>
+  </form>
+
+  <div class="cs-warn">⚠ ข้อมูลส่วนบุคคลของผู้ป่วย ใช้เพื่อทบทวนคุณภาพบริการภายในโรงพยาบาลเท่านั้น —
+    ห้ามถ่ายภาพ คัดลอก หรือส่งต่อออกนอกระบบ · นามสกุลแสดงบางส่วน · การเปิดหน้านี้ถูกบันทึก (เวลา ช่วงวันที่ และ IP ของเครื่อง ไม่มี HN/ชื่อ)</div>
+
+  {% set n = d.rows | length %}
+  <div class="cs-count">{{ '{:,}'.format(n) }}{{ '+' if d.truncated }} ราย
+    {% if d.truncated %}<small style="font-weight:400;color:var(--muted)">(แสดง {{ n }} รายแรก — เลือกช่วงวันที่ให้สั้นลง)</small>{% endif %}</div>
+
+  <section class="block">
+    <div class="ck-tw">
+    {% if kind == 'revisit' %}
+    <table class="t cs">
+      <tr><th>HN</th><th>ชื่อ</th><th>ครั้งก่อน</th><th>ครั้งนี้ (กลับมา)</th><th>ห่างกัน</th></tr>
+      {% for r in d.rows %}
+      <tr>
+        <td>{{ r.hn }}</td><td>{{ r.name }}</td>
+        <td class="w">{{ r.prev_when }}<span class="sub">{{ r.prev_dx }} · {{ r.prev_dch }}</span></td>
+        <td class="w"><span class="lvl" style="background:{{ level_color[r.level] }}">{{ r.level }}</span>{{ r.when }}
+          <span class="sub">{{ r.dx }} · {{ r.dch }}</span></td>
+        <td>{{ r.gap }}</td>
+      </tr>
+      {% else %}<tr><td colspan="5">✅ ไม่พบเคสกลับมาซ้ำด้วยโรคเดิมในช่วงที่เลือก</td></tr>
+      {% endfor %}
+    </table>
+    <p class="ck-note">นับเงื่อนไขเดียวกับการ์ด “กลับมา ER ซ้ำ” บนแดชบอร์ด: กลับมา ER ภายใน 48 ชม. โดยโรคหลักครั้งนี้กับครั้งก่อนอยู่กลุ่มรหัส ICD-10 เดียวกัน
+      (ไม่นับรับบริการ / มาตามนัด / โรคหลักรหัส Z) · แถวละ 1 ครั้งที่กลับมา แสดงครั้งก่อนหน้าล่าสุดที่ทำให้นับ</p>
+    {% else %}
+    <table class="t cs">
+      <tr><th>HN</th><th>ชื่อ</th><th>เข้า ER</th><th>อยู่ ER ก่อนไป</th><th>ไปที่</th><th>โรคหลัก</th></tr>
+      {% for r in d.rows %}
+      <tr>
+        <td>{{ r.hn }}</td><td>{{ r.name }}</td><td>{{ r.when }}</td>
+        <td><b style="font-family:Kanit;color:#b91c1c">{{ r.span }}</b></td><td>{{ r.dch }}</td><td class="w">{{ r.dx }}</td>
+      </tr>
+      {% else %}<tr><td colspan="6">✅ ไม่พบเคสสีแดงอยู่ ER เกิน {{ red_cutoff }} นาทีในช่วงที่เลือก</td></tr>
+      {% endfor %}
+    </table>
+    <p class="ck-note">นับเงื่อนไขเดียวกับบล็อก “Red &gt; {{ red_cutoff }} min”: ผู้ป่วยระดับ 1 ที่ Admit/Refer แล้วอยู่ ER เกิน {{ red_cutoff }} นาที
+      (เข้า ER → ลงทะเบียน Admit / เวลาส่งต่อ) เรียงจากนานที่สุด</p>
+    {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="appinfo">
+    <span><b>ER Dashboard</b> เวอร์ชัน {{ version }}</span>
+    <span>📞 ติดต่อ: {{ contact }}</span>
+  </div>
+</div>
+</body>
+</html>
